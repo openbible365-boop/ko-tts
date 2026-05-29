@@ -34,8 +34,11 @@ class Settings(BaseSettings):
     # 切分 (worker + ffmpeg silencedetect)
     # 策略: 把语音块合并到 ~target 秒, 并在最近的静音(句末停顿)处下刀;
     # 只有当单段连续语音超过 max 仍无停顿时, 才硬切(兜底)。
-    seg_silence_noise_db: float = -30.0  # 静音判定阈值 (dB)
-    seg_min_silence_sec: float = 0.35  # 最短静音时长 (调小以捕捉句末停顿)
+    # noise_db=-21 是对真实朗读(约翰福音1)做参数扫描定出来的: 该录音停顿带室
+    # 内底噪、从不真正静音, -30dB 几乎扫不到停顿; -21dB/0.25s 能稳定捕捉句末停顿,
+    # 切出 ~14s(11~17s)、刀刀落在停顿上的片段。换录音源/麦克风环境可能要重调。
+    seg_silence_noise_db: float = -21.0  # 静音判定阈值 (dB), 越接近 0 越宽松
+    seg_min_silence_sec: float = 0.25  # 最短静音时长
     seg_min_segment_sec: float = 3.0  # 丢弃短于此的片段
     seg_target_segment_sec: float = 13.0  # 目标片段时长, 达到后在下一处停顿断开
     seg_max_segment_sec: float = 18.0  # 硬上限: 无停顿时超过此长度才硬切
