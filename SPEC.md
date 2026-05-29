@@ -87,6 +87,8 @@
 
 - [x] **切分改"句末停顿就近下刀"**(2026-05-30):原 `compute_segments` 把长语音按 `max_len` 死板硬切(每段恰好 15.0s、常切在句中,不利校对)。改成**目标长度合并 + 静音边界断开**:把语音块合并到 ~`seg_target_segment_sec`(13s),在最近的静音(句末停顿)处收口;只有整段连续无停顿且超 `max`(18s)才兜底硬切。**关键是静音阈值**:对真实朗读(约翰福音1)做参数扫描发现其停顿带室内底噪、从不低于 -30dB,故旧 `-30dB/0.5s` 几乎扫不到停顿;改 **`-21dB/0.25s`** 后稳定捕捉。线上重切验证:`silences=275 -> 48 段`,时长 11~17.3s、中位 14.1s、**0 段硬切**,刀刀落在停顿。参数都在 settings,换录音源/麦克风环境可能要重调。单测 8 例覆盖新语义。
 
+- [x] **可选去背景音乐(人声分离)**(2026-05-30):上传时勾选「消除背景音乐」→ `recordings.remove_music`(迁移 0002)。worker 在切分前对 `remove_music` 的录音做**人声分离**(UVR MDX-Net,经 `audio-separator`),用剥掉音乐的人声去做静音检测+切片(顺带让停顿真静音、切得更准)。**打包**:audio-separator 拖 torch,装在独立 `/opt/sepvenv`(Dockerfile `sepbuilder` 阶段,CPU torch 三件套必须配套否则 `torchvision::nms` 不匹配),worker 以**子进程**调 CLI —— torch 不进常驻 whisper 的进程,跑完即释放内存。`app/separation.py`;模型缓存 `/models/audio-separator`。**慢**(~2.2× 实时,12 分钟录音 ~28 分钟),故 reaper `worker_claim_timeout_min` 30→120。线上端到端验证:90 秒带乐片段→人声干净、6 段 ~14s。镜像 1.59G→3.71G(CPU torch)。
+
 ### 前端 UI 启动 — 投稿者上传流 slice(2026-05-29)
 - [x] **前端脚手架 `frontend/`(与 backend/ 平级,monorepo)**:**React + Vite + TypeScript SPA**,路由 `react-router-dom`,服务器态 `@tanstack/react-query`,纯 SPA 无 SSR。栈选型 + 首个 slice(投稿者上传流)由 joshua 拍板。
 - [x] **auth + 「我的录音」列表已跑通**:登录/注册页(注意 login 是 OAuth2 **form-encoded**)、会话保持(token 存 localStorage `kotts_token`,启动用 `/auth/me` 验活)、路由守卫、录音列表(react-query,流转中状态每 5s 轮询)。`lib/api.ts` fetch 封装 + `lib/endpoints.ts` 类型化调用对齐后端 schema。
