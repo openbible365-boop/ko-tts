@@ -85,6 +85,14 @@
 - [x] **HSTS 已开**(2026-05-29):Caddyfile `Strict-Transport-Security "max-age=31536000; includeSubDomains"`(不发 preload 字面量,等想提交 hstspreload.org 再加)。deploy.sh 改用 `restart caddy` 替代 `caddy reload`——因为 Caddyfile 是单文件 bind mount,rsync 原子替换留下旧 inode,reload 会看到 "config is unchanged",必须 restart 重建挂载
 - [x] **worker reaper 已上线**(2026-05-29):`_reap_stale(timeout_min)`,UPDATE 把 `segmenting>=N分钟` 退回 `uploaded`、`transcribing>=N分钟` 退回 `pending_transcription`。**worker 启动时 aggressive sweep(timeout=0,单 worker 假设)+ 主循环每 5 分钟跑一次(timeout=30 分钟,可配)**。线上注入卡死行→重启 worker→reaper 解锁→主循环重新处理(假数据走 failed 终态),全链路验证
 
+### 前端 UI 启动 — 投稿者上传流 slice(2026-05-29)
+- [x] **前端脚手架 `frontend/`(与 backend/ 平级,monorepo)**:**React + Vite + TypeScript SPA**,路由 `react-router-dom`,服务器态 `@tanstack/react-query`,纯 SPA 无 SSR。栈选型 + 首个 slice(投稿者上传流)由 joshua 拍板。
+- [x] **auth + 「我的录音」列表已跑通**:登录/注册页(注意 login 是 OAuth2 **form-encoded**)、会话保持(token 存 localStorage `kotts_token`,启动用 `/auth/me` 验活)、路由守卫、录音列表(react-query,流转中状态每 5s 轮询)。`lib/api.ts` fetch 封装 + `lib/endpoints.ts` 类型化调用对齐后端 schema。
+- [x] **dev 连后端 = Vite proxy**:`/api/*` 转发到生产 `https://kr-tts.openbible.live` 并剥 `/api` 前缀(后端路由无前缀),浏览器同源不触发 CORS;可用 `VITE_API_PROXY_TARGET` 覆盖。验证:build + lint + proxy 链路(health/401/form 登录)+ 浏览器渲染(登录页 + 守卫重定向)全通过,无 console 报错。
+- [x] **上传页已跑通**(2026-05-29):`routes/Upload.tsx` 完整三步流——建行 `POST /recordings` → 浏览器 XHR PUT 直传 R2(带进度条)→ `complete`;`lib/endpoints.ts` 加 `uploadFileToR2()`(XHR 拿进度,PUT 绝对预签名 URL 不经 `/api` 代理)。验证:tsc+lint 全绿、浏览器渲染正常、`POST /recordings` 返 201+预签名 URL;**直传那步在未配 CORS 时如期被 `Failed to fetch` 拦**(印证前置)。
+- [x] **R2 CORS 规则已写** `deploy/r2-cors.json`(仅放行 `http://localhost:5173`,方法 PUT/GET/HEAD)。**由 joshua 手动贴进 Cloudflare R2 → bucket → Settings → CORS Policy**。配好后上传页端到端即通。
+- 注:node 经 nvm 装 v24(本机原无 brew/node),详见下方「会咬人的隐藏知识」与 memory `project_frontend_dev_setup`。
+
 ### 可选下一步(MVP 后)
 - HSTS 打开(一行 Caddyfile)
 - auth 限速;自动化测试;CI
@@ -123,9 +131,11 @@ worker 与 backend 共用同一镜像(含 ffmpeg),`command: python -m app.worker
 
 ### 此刻的快照
 - 后端 MVP **完整**,部署在 https://kr-tts.openbible.live(4 容器全 healthy)
+- **前端 `frontend/` 投稿者上传流 slice 完成**:React+Vite SPA,auth + 「我的录音」列表 + **上传页**(建行→直传 R2→complete)全跑通(build/lint/渲染验证)。**唯一外部前置:R2 bucket CORS 由 joshua 贴 `deploy/r2-cors.json` 进 Cloudflare**——配好上传才能端到端成功。
 - 测试 90 个,CI 全绿(`https://github.com/openbible365-boop/ko-tts/actions`)
-- 最新 commit `302fecd`,11 commits total,branch=main
+- 最新 commit `302fecd`,11 commits total,branch=main(前端改动 + `.claude/settings.local.json` 的 env/白名单改动均未提交)
 - prod 库内容:**1 个 contributor**(jmdsong@gmail.com),0 recordings/0 segments
+- **前端 dev 怎么跑**:node 经 nvm 装在 `~/.nvm`(本机无 brew),已把 node bin 前置进 `.claude/settings.local.json` 的 `env.PATH`,所以**重启会话后**裸 `npm`/`node` 即可用,不必再 source nvm。dev server 用 Vite proxy 连生产 API。细节见 memory `project_frontend_dev_setup`。
 - 想测试 admin API 前要先 psql 提权一次(冷启动 only):
   ```sql
   UPDATE users SET role='admin' WHERE email='jmdsong@gmail.com';
@@ -135,17 +145,18 @@ worker 与 backend 共用同一镜像(含 ffmpeg),`command: python -m app.worker
 1. 本节 + 上面的"进度"列表 —— 边界 + 现状
 2. 自动加载的 memory(`~/.claude/projects/-Users-joshua-Desktop-Projects-ko-tts/memory/`):**协作风格** + **SPEC 引用** + **R2 token IP 状态**
 3. `git log --oneline -15` —— 11 commits 全是 conventional 格式,扫一遍知本周做了啥
-4. 代码入口:`backend/app/main.py` → 5 个 router 文件 → `worker.py`
+4. 代码入口(后端):`backend/app/main.py` → 5 个 router 文件 → `worker.py`
+4b. 代码入口(前端):`frontend/src/App.tsx`(路由)→ `lib/api.ts` + `lib/endpoints.ts`(对接后端)→ `auth/` + `routes/`;`vite.config.ts`(proxy)
 5. 运维入口:`deploy/deploy.sh` + `DEPLOYMENT.md` + `backup.sh`
 
 ### 自然的下一步(每条都自带没拍板的设计点)
 
 | 方向 | 量 | 还没拍板的事 |
 |---|---|---|
-| **前端 UI** | 大 (数天) | 栈选型(React+Vite+TanStack 是稳起点);要不要套现成 admin 模板;SSR 是否要 |
+| **前端 UI** | 进行中 | 栈已定(React+Vite SPA,无 SSR,无 admin 模板)。auth+录音列表+上传页已跑通;**下一块**待拍板(切片播放/校对页?部署前端?) |
 | **训练侧 fetch 脚本** | 1h | 输出格式(LJSpeech-like 还是 JSONL+meta);本地缓存策略 |
 | **镜像瘦身** | 2-3h | 拆 backend / worker 两个 Dockerfile;backend 能从 1.58GB → ~300MB |
-| **CORS for 浏览器直传** | 1h | 给 `ob-tts-data` 配 CORS;在前端开始前做就行 |
+| **CORS for 浏览器直传** | 1h | 给 `ob-tts-data` 配 CORS;**已成为上传页的硬前置**——浏览器 presigned PUT 没它会被拦 |
 | **HSTS preload 提交** | 30min + 数周等审核 | **不可逆**,提交前确定 `kr-tts.openbible.live` 永远 HTTPS |
 | **密码重置 / 邮箱验证** | 各 1-2h | 要不要 SMTP;短期 token vs 邮件链接 |
 | **补完集成测试** | 已 60+,可继续加 | 目前覆盖 auth/recordings/segments/admin/export 五大 router |
@@ -158,6 +169,7 @@ worker 与 backend 共用同一镜像(含 ffmpeg),`command: python -m app.worker
 4. **`rsync --delete` 会扫宿主机数据卷** → `deploy.sh` 显式 `--exclude '/data/'` 和 `--exclude '/logs/'`;**改这两条 = 丢库/丢日志**。
 5. **R2 token 现在没有 IP 限制**(为了客户端 presigned PUT)→ token 安全只靠 `.env.prod` 不泄漏。如果以后改成 backend 中转上传,可以加回 IP 锁,详见 memory `project_r2_token_ip_lock`。
 6. **`test_recordings.py::_auth` 不能 async**(其它 router 的 `_auth` 也都是 sync)—— 一个一行的 typo 在 CI 里炸了 15 条用例;本地 skip 看不到,所以"只改测试代码"的 PR CI 第一次飘红别紧张,push 再试就行。
+7. **前端 node 经 nvm,不在默认 PATH** → 已把 node bin 前置进 `.claude/settings.local.json` 的 `env.PATH`(完整字面值,不依赖 `${PATH}` 展开),**重启会话后**裸 `npm`/`node` 才生效。冷启动若没重启、又见到 `export NVM_DIR=...; . nvm.sh; nvm use; npm ...` 被安全启发式反复拦的确认页,那是误报——重启即解。node 版本变了,这个 `env.PATH` 和 preview `launch.json` 的绝对路径都要同步改。
 
 ### 不要随手改的清单
 - `RecordingStatus` / `SegmentStatus` **改/删现有值**会破坏现存数据(新增 OK,因为存 String 列)
