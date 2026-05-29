@@ -45,6 +45,7 @@ class RecordingCreate(BaseModel):
     mime_type: str | None = Field(default=None, max_length=128)
     title: str | None = Field(default=None, max_length=512)
     notes: str | None = None
+    remove_music: bool = False  # 切分前剥掉背景音乐(人声分离)
 
 
 class RecordingRead(BaseModel):
@@ -63,6 +64,7 @@ class RecordingRead(BaseModel):
     content_category: str
     title: str | None
     notes: str | None
+    remove_music: bool
     status: str
     created_at: datetime
     updated_at: datetime

@@ -13,6 +13,7 @@ from sqlalchemy import (
     UniqueConstraint,
     Uuid,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -89,6 +90,10 @@ class Recording(TimestampMixin, Base):
     content_category: Mapped[str] = mapped_column(String(32), nullable=False)
     title: Mapped[str | None] = mapped_column(String(512))
     notes: Mapped[str | None] = mapped_column(Text)
+    # 投稿者上传时勾选: 切分前先做人声分离, 剥掉背景音乐
+    remove_music: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     status: Mapped[str] = mapped_column(
         String(32), nullable=False, default=RecordingStatus.uploaded, index=True
     )

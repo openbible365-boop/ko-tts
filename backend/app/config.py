@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     seg_target_segment_sec: float = 13.0  # 目标片段时长, 达到后在下一处停顿断开
     seg_max_segment_sec: float = 18.0  # 硬上限: 无停顿时超过此长度才硬切
     seg_sample_rate: int = 24000  # 切片输出采样率 (单声道 wav)
+
+    # 人声分离 (audio-separator, 独立 venv, 仅当 recording.remove_music=True 时启用)
+    sep_model_filename: str = "UVR-MDX-NET-Voc_FT.onnx"
+    sep_model_dir: str = "/models/audio-separator"  # 模型缓存(worker_models volume)
     worker_poll_interval_sec: float = 5.0  # worker 空闲轮询间隔
 
     # ASR (faster-whisper)
@@ -53,7 +57,9 @@ class Settings(BaseSettings):
     asr_model_cache_dir: str = "/models"  # 容器内模型缓存目录, 走 named volume
 
     # reaper: 回收陈旧的 worker claim (segmenting / transcribing 卡死)
-    worker_claim_timeout_min: int = 30  # 超过此时长仍在中间状态, 视为陈旧 -> 回退
+    # 注: 开了 remove_music 的录音, 切分阶段含人声分离(~2.2× 实时, 12 分钟录音
+    # ~28 分钟), 故 timeout 要足够大, 否则 reaper 会在分离途中把它退回造成反复重切。
+    worker_claim_timeout_min: int = 120  # 超过此时长仍在中间状态, 视为陈旧 -> 回退
     worker_reap_interval_sec: float = 300.0  # worker 主循环里的 reap 周期 (5 min)
 
     @property

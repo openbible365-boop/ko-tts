@@ -16,7 +16,7 @@ import uuid
 
 from sqlalchemy import delete, func, select, update
 
-from app import asr, segmentation, storage
+from app import asr, segmentation, separation, storage
 from app.config import settings
 from app.db import SessionLocal
 from app.models import Recording, RecordingStatus, Segment, SegmentStatus
@@ -45,6 +45,7 @@ async def _process_recording(rec_id: uuid.UUID) -> None:
     async with SessionLocal() as s:
         rec = await s.get(Recording, rec_id)
         audio_key = rec.audio_key
+        remove_music = rec.remove_music
 
     data = await storage.get_bytes(audio_key)
 
@@ -54,8 +55,16 @@ async def _process_recording(rec_id: uuid.UUID) -> None:
             f.write(data)
 
         meta = await segmentation.probe(src)
+
+        # 元数据(时长/采样率/声道/编码)取原始文件; 但切分与切片用的音频源
+        # 在开了 remove_music 时换成"剥掉音乐后的人声"(分离不改变时长)。
+        seg_src = src
+        if remove_music:
+            log.info("rec %s: removing background music (vocal separation)…", rec_id)
+            seg_src = await separation.separate_vocals(src, os.path.join(tmp, "sep"))
+
         silences = await segmentation.detect_silences(
-            src, settings.seg_silence_noise_db, settings.seg_min_silence_sec
+            seg_src, settings.seg_silence_noise_db, settings.seg_min_silence_sec
         )
         spans = segmentation.compute_segments(
             meta["duration_ms"] / 1000.0,
@@ -73,7 +82,7 @@ async def _process_recording(rec_id: uuid.UUID) -> None:
         for idx, (start, end) in enumerate(spans):
             seg_id = uuid.uuid4()
             out = os.path.join(tmp, f"{seg_id}.wav")
-            await segmentation.cut_clip(src, start, end, out, settings.seg_sample_rate)
+            await segmentation.cut_clip(seg_src, start, end, out, settings.seg_sample_rate)
             with open(out, "rb") as f:
                 clip = f.read()
             key = storage.segment_key(seg_id)

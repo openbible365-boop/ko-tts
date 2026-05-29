@@ -39,6 +39,7 @@ export interface Recording {
   content_category: ContentCategory
   title: string | null
   notes: string | null
+  remove_music: boolean
   status: RecordingStatus
   created_at: string
   updated_at: string
@@ -50,6 +51,7 @@ export interface RecordingCreate {
   mime_type?: string | null
   title?: string | null
   notes?: string | null
+  remove_music?: boolean
 }
 
 export interface RecordingCreateResponse {

@@ -31,6 +31,7 @@ export function Upload() {
   const [category, setCategory] = useState<ContentCategory>('sermon')
   const [title, setTitle] = useState('')
   const [notes, setNotes] = useState('')
+  const [removeMusic, setRemoveMusic] = useState(false)
   const [file, setFile] = useState<File | null>(null)
 
   const [phase, setPhase] = useState<Phase>('idle')
@@ -51,6 +52,7 @@ export function Upload() {
         mime_type: file.type || null,
         title: title.trim() || null,
         notes: notes.trim() || null,
+        remove_music: removeMusic,
       })
 
       setPhase('uploading')
@@ -107,6 +109,16 @@ export function Upload() {
             rows={3}
             disabled={busy}
           />
+        </label>
+
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={removeMusic}
+            onChange={(e) => setRemoveMusic(e.target.checked)}
+            disabled={busy}
+          />
+          <span>消除背景音乐(有伴奏/音乐时勾选;切分前先分离人声,处理较慢)</span>
         </label>
 
         <label>

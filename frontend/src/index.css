@@ -238,6 +238,18 @@ button:disabled {
   color: var(--muted);
   margin: 0;
 }
+/* 复选框行: 横排, 覆盖 .form-stack label 的纵排 */
+.form-stack label.checkbox-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text);
+  cursor: pointer;
+}
+.checkbox-row input {
+  width: auto;
+  margin: 0;
+}
 
 /* --- 按钮变体 --- */
 .btn-secondary {
