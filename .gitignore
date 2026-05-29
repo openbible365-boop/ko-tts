@@ -1,0 +1,23 @@
+# 环境变量 / 密钥 (绝不提交)
+.env
+.env.*
+!.env.prod.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# 本地数据
+data/
+
+# 系统
+.DS_Store
+
+# Claude Code 本地会话/权限状态(机器特定)
+.claude/

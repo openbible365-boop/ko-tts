@@ -1,0 +1,86 @@
+name: ko-tts
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      # 宿主机持久化 (不在 git/rsync 范围内, deploy.sh 的 rsync 会保护此目录)
+      - /opt/ko-tts/data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - ko-tts-net
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: ../deploy/Dockerfile
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # 不映射端口到宿主机, 仅 ko-tts-net 内部 (Caddy) 可访问 backend:8000
+    expose:
+      - "8000"
+    networks:
+      - ko-tts-net
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ../backend
+      dockerfile: ../deploy/Dockerfile
+    command: ["python", "-m", "app.worker"]
+    # worker 不跑 HTTP, 禁用镜像里的 HTTP healthcheck
+    healthcheck:
+      disable: true
+    env_file:
+      - .env
+    environment:
+      # 所有 HF 相关缓存(hub 模型 + xet 客户端运行时/日志)都落在 named volume,
+      # 避免 xet 试图写 $HOME/.cache 失败
+      HF_HUB_CACHE: /models
+      HF_HOME: /models
+      XDG_CACHE_HOME: /models/.cache
+    volumes:
+      - worker_models:/models
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - ko-tts-net
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+    networks:
+      - ko-tts-net
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:
+  worker_models:
+
+networks:
+  ko-tts-net:
+    driver: bridge

@@ -1,0 +1,106 @@
+# ko-tts — 朝鲜语 TTS 数据采集服务
+
+> 共享上下文文档。后续对话以此为准。
+> 最后更新: 2026-05-26
+
+## 1. 项目目标
+
+收集**朝鲜语**(한국어 / Korean)基督教内容音频,用于训练 TTS 模型。
+
+- 内容类型: 讲道 / 圣经朗读 / 赞美诗
+- 架构: 公网部署**采集服务**(本仓库) + 本地**训练模型**(另行处理)
+- 本仓库范围: 仅采集 web 服务 + 其部署,不含训练代码
+
+## 2. 技术栈 — 已确定,不要改 🔒
+
+以下决策已锁定。除非我明确要求,**不要**替换、升级大版本或引入替代方案:
+
+| 层 | 选型 |
+|---|---|
+| 后端语言 | Python 3.12 |
+| Web 框架 | FastAPI |
+| ORM | SQLAlchemy 2.x (async) |
+| 迁移 | Alembic |
+| DB 驱动 | asyncpg |
+| 数据库 | PostgreSQL 16 (Docker) |
+| 反向代理 | Caddy (自动 HTTPS) |
+| 部署 | Docker Compose |
+| 包管理 | uv |
+| 对象存储 | Cloudflare R2,bucket `ob-tts-data` |
+
+## 3. 基础设施
+
+### VPS
+- 提供商: Vultr,Singapore,vhf 系列
+- 系统: Ubuntu 24.04 x64
+- IP: `149.28.149.67`
+- 登录: `root`(SSH key)
+- 域名: `kr-tts.openbible.live`(DNS 已 A 记录指向 VPS IP — 已验证解析正确)
+
+### 本地
+- macOS,项目目录: `/Users/joshua/Desktop/Projects/ko-tts`
+
+### 对象存储
+- Cloudflare R2,bucket: `ob-tts-data`
+- 凭据由我手填入 `.env`,Claude 无需知道具体值
+
+## 4. 工作方式约定 🔒
+
+- **一步步来**,不要跳步。未经我确认不要提前写部署脚本 / 大规模脚手架。
+- 凭据(R2、DB 密码等)我自己填 `.env`,不要写入仓库,要进 `.gitignore`。
+
+## 5. 进度
+
+- [x] DNS 解析验证(`kr-tts.openbible.live` → 149.28.149.67)
+- [x] 创建 SPEC.md
+- [x] 本地 SSH 接入 VPS(key 登录已验证 ✅,2026-05-26)
+- [x] 服务器初始化(`deploy/setup-server.sh` 已在 VPS 执行成功;手册 `deploy/SERVER_SETUP.md`)
+- [x] 部署文件已写:`deploy/Dockerfile`、`docker-compose.prod.yml`、`Caddyfile`、`.env.prod.example`、`deploy.sh`、`DEPLOYMENT.md`;根目录 `.gitignore`
+- [x] 后端骨架 `backend/`(app/main.py 含 `/health`、config、async db、alembic 异步 env.py、.dockerignore、**uv.lock 已生成**,38 包,py3.12 sync + import + alembic 离线均验证通过)
+- [x] **首次部署成功(2026-05-26),整条链路验证通过**:`https://kr-tts.openbible.live/health` → HTTP/2 200 `{"status":"ok"}`;Caddy 已签发 Let's Encrypt 正式证书;postgres/backend 容器 healthy;alembic 能连库
+- [x] **数据模型 + 首个迁移 `0001` 已上线**(users / recordings / segments;UUID 主键、timestamptz、status 存 String、命名约定固定;`alembic check` 通过,DB 与模型零漂移)
+- [x] **R2 客户端封装 `app/storage.py`(aioboto3)**:put/get/delete/head/exists、预签名 PUT/GET、键构造、check_connection;已对真实 `ob-tts-data` 做往返测试通过(从 VPS 容器内)。R2_* 已填入 `deploy/.env.prod`
+- [x] **鉴权(JWT)已上线**:开放自助注册(默认 contributor)、登录(OAuth2 password flow)、`/auth/me`;bcrypt 密码哈希、PyJWT HS256、access-only token(7 天)、`get_current_user`/`require_role` 依赖。线上 register/login/me + 401/409/422 全验证通过
+- [x] **上传 recording 接口已上线**(预签名直传):`POST /recordings`(建行 `pending_upload` + 返回预签名 PUT URL)、`POST /recordings/{id}/complete`(head_object 校验 + 转 `uploaded` + 记 file_size)、`GET /recordings`(本人;reviewer/admin 看全部)、`GET /recordings/{id}`、`GET /recordings/{id}/download-url`(预签名 GET)。线上端到端(含本地直传 R2 + 下载校验)全通过
+- [x] **自动切分(worker)已上线**:新增 `worker` 容器(Postgres 轮询 `FOR UPDATE SKIP LOCKED` 领取 `uploaded` 录音)→ ffmpeg `silencedetect` 按静音切 → 每段切单声道 wav(24kHz)传 R2 → 建 segment 行(`pending_transcription`);录音 `uploaded→segmenting→segmented` 并回填 duration/sr/channels/codec。API:`POST /recordings/{id}/segment`(重切)、`GET /recordings/{id}/segments`。线上合成音频测试:3 段精确切分、切片入 R2、元数据正确
+- [x] **ASR 已上线(本地 faster-whisper)**:worker 同时处理切分和 ASR(优先 ASR);medium + int8 量化,模型缓存在 `worker_models` named volume(`HF_HOME`/`XDG_CACHE_HOME` 重定向到 `/models` 避免 xet 写入 $HOME 失败);segment 状态机加 `transcribing` / `transcription_failed`(String 列,无需迁移)。线上真韩语(macOS Yuna)验证:`uploaded→segmenting→segmented→transcribing→pending_correction`,asr_text 接近完美(仅 `시염`/`시험` 一字之差)
+- [x] **人工校对/审核 API 已上线**:新 `app/routers/segments.py` 提供 `GET /segments`(支持 status/recording_id 过滤;contributor 仅见自己上传的)、`GET /segments/{id}`、`GET /segments/{id}/download-url`(预签名 GET 切片)、`POST .../correct`(reviewer/admin,`pending_correction|rejected→pending_review`,写 text/corrected_by/at)、`POST .../approve`(`pending_review→approved`,清空 rejection_reason)、`POST .../reject`(`pending_review→rejected`,记 reason)。线上验证:状态机/权限/409/403/list/下载全通过
+
+### ✅ 数据采集主流程完整闭环(2026-05-29)
+```
+投稿者上传 → uploaded → [worker] segmenting → segmented
+  └── 每段: pending_transcription → [worker] transcribing → pending_correction (asr_text)
+         └── reviewer correct → pending_review (text)
+                ├── approve → approved  ← 进训练集
+                └── reject  → rejected ←→ (回到 correct)
+```
+
+- [x] **管理端点 `/admin/users` 已上线**:`GET`(分页 + role / is_active / email_like 过滤)、`GET /{id}`、`PATCH /{id}`(role/is_active 至少一项;**self-demote/self-deactivate 守护 400 防 admin 锁死**);停用用户的 token 立即失效(`get_current_user` 已查 `is_active`)。**首个 admin 仍靠 psql 引导**(`UPDATE users SET role='admin' WHERE email='...';`),之后均走 API
+
+### 可选下一步(MVP 后)
+- 导出 approved segments(给训练侧的清单/manifest;含预签名 audio_url + text + duration)
+- 浏览器直传 R2 时 bucket CORS 配置
+- 前端 UI;批量操作;监控/统计
+
+### 切分子系统(2026-05-26)
+worker 与 backend 共用同一镜像(含 ffmpeg),`command: python -m app.worker`,无 Redis(DB 即队列)。切分参数在 settings(静音阈值/最短静音/最短最长片段/采样率)。`compute_segments` 为纯函数(已单测:基本切分/丢短/切长/尾静音)。worker 禁用了镜像的 HTTP healthcheck。
+
+### 上传架构决定(2026-05-26)
+客户端**预签名直传 R2**(文件不经后端)。为此 joshua **移除了 R2 token 的 IP 锁**(原锁定 VPS,会拒绝任意客户端 IP 的预签名上传)。权衡:token 不再受 IP 保护,靠 `.env` 保密 + presigned URL 对象级/短时效兜底。状态流:`pending_upload`(建行发 URL)→`uploaded`(complete 校验入库)。浏览器直传还需给 bucket 配 CORS(待办)。
+
+### 数据模型(已确定的工作流)
+投稿者登录→上传长录音(recording,存 R2)→切成多个 segment→每段 ASR 出 `asr_text`→人工校对成 `text`→人工审核→approved 进训练集。单一目标说话人(不建 speaker 表,recording 记 `uploaded_by` 溯源)。segment 状态机:`pending_transcription→pending_correction→pending_review→approved/rejected`。
+
+### 部署踩坑记录
+- Postgres 数据目录 `/opt/ko-tts/data/postgres` 一旦初始化,**改 `POSTGRES_PASSWORD` 不会生效**(镜像只在首次初始化时建角色)。首次部署时该目录已被早先一次手动 `docker compose up` 用占位符密码初始化,导致 backend 用新密码连库报 `password authentication failed`。修法(库为空时):`ALTER USER` 同步密码,或清空该目录重新初始化。已采用 `ALTER USER`(非破坏性)。
+
+### 部署设计要点
+- Caddy 自动 HTTPS,反代 `backend:8000`;postgres/backend 不对宿主机暴露端口。
+- PG 数据持久化在宿主机 `/opt/ko-tts/data/postgres`;`deploy.sh` 的 `rsync --delete` 用 `--exclude '/data/'` 保护它。
+- 本地真实环境变量放 `deploy/.env.prod`(被 .gitignore 忽略),部署时同步并落成远端 `deploy/.env`。
+
+### SSH 接入备注
+- 本地密钥: `~/.ssh/id_ed25519`(ed25519,**无 passphrase**),公钥已装到 VPS `root` 的 authorized_keys。
+- 指纹: `SHA256:zOIbXXNApZoxEL3yTbNtfdSM44tg+7zvB7R6KNcexNA`
+- 验证: `ssh -o BatchMode=yes -i ~/.ssh/id_ed25519 root@149.28.149.67` → `key-login-ok`,host `sg-vhf`,Ubuntu 24.04.4 LTS。
+- 可选待办: 给 `~/.ssh/config` 加 host 别名;给 key 加 passphrase;后续考虑禁用 root 密码登录。
