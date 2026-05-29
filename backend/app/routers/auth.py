@@ -1,12 +1,14 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
+from app.config import settings
 from app.deps import CurrentUser, SessionDep
 from app.models import User, UserRole
+from app.ratelimit import limiter
 from app.schemas import Token, UserCreate, UserRead
 from app.security import create_access_token, hash_password, verify_password
 
@@ -14,7 +16,8 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)
-async def register(data: UserCreate, session: SessionDep) -> User:
+@limiter.limit(settings.rate_limit_register)
+async def register(request: Request, data: UserCreate, session: SessionDep) -> User:
     user = User(
         email=data.email,
         hashed_password=hash_password(data.password),
@@ -34,8 +37,11 @@ async def register(data: UserCreate, session: SessionDep) -> User:
 
 
 @router.post("/login", response_model=Token)
+@limiter.limit(settings.rate_limit_login)
 async def login(
-    form: Annotated[OAuth2PasswordRequestForm, Depends()], session: SessionDep
+    request: Request,
+    form: Annotated[OAuth2PasswordRequestForm, Depends()],
+    session: SessionDep,
 ) -> Token:
     user = await session.scalar(select(User).where(User.email == form.username))
     if user is None or not verify_password(form.password, user.hashed_password):

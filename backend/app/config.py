@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 24 * 7  # 7 天
 
+    # 限速 (slowapi 字符串语法: "<n>/<period>"; period = second/minute/hour/day)
+    # 内存后端单进程 OK; 横向扩展时切 Redis
+    rate_limit_login: str = "5/minute"  # 防爆破
+    rate_limit_register: str = "3/hour"  # 防批量注册
+
     # 切分 (worker + ffmpeg silencedetect)
     seg_silence_noise_db: float = -30.0  # 静音判定阈值 (dB)
     seg_min_silence_sec: float = 0.5  # 最短静音时长
