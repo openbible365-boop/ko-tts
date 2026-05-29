@@ -5,7 +5,7 @@ from slowapi.errors import RateLimitExceeded
 
 from app.config import settings
 from app.ratelimit import limiter
-from app.routers import admin, auth, recordings, segments
+from app.routers import admin, auth, export, recordings, segments
 
 
 def create_app() -> FastAPI:
@@ -32,6 +32,7 @@ def create_app() -> FastAPI:
     app.include_router(recordings.router)
     app.include_router(segments.router)
     app.include_router(admin.router)
+    app.include_router(export.router)
 
     return app
 

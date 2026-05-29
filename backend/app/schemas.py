@@ -107,3 +107,15 @@ class SegmentCorrect(BaseModel):
 
 class SegmentReject(BaseModel):
     rejection_reason: str = Field(min_length=1, max_length=1000)
+
+
+class ExportCategoryStats(BaseModel):
+    count: int
+    duration_ms: int
+
+
+class ExportStats(BaseModel):
+    total: int
+    total_duration_ms: int
+    by_status: dict[str, int]
+    by_category: dict[str, ExportCategoryStats]
