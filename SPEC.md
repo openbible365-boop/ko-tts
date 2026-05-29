@@ -91,6 +91,7 @@
 - [x] **dev 连后端 = Vite proxy**:`/api/*` 转发到生产 `https://kr-tts.openbible.live` 并剥 `/api` 前缀(后端路由无前缀),浏览器同源不触发 CORS;可用 `VITE_API_PROXY_TARGET` 覆盖。验证:build + lint + proxy 链路(health/401/form 登录)+ 浏览器渲染(登录页 + 守卫重定向)全通过,无 console 报错。
 - [x] **上传页已跑通**(2026-05-29):`routes/Upload.tsx` 完整三步流——建行 `POST /recordings` → 浏览器 XHR PUT 直传 R2(带进度条)→ `complete`;`lib/endpoints.ts` 加 `uploadFileToR2()`(XHR 拿进度,PUT 绝对预签名 URL 不经 `/api` 代理)。验证:tsc+lint 全绿、浏览器渲染正常、`POST /recordings` 返 201+预签名 URL;**直传那步在未配 CORS 时如期被 `Failed to fetch` 拦**(印证前置)。
 - [x] **R2 CORS 已配 + 端到端验证通过**(2026-05-29):规则 `deploy/r2-cors.json`(仅放行 `http://localhost:5173`,方法 PUT/GET/HEAD),joshua 已贴进 Cloudflare R2 → bucket → Settings → CORS Policy。浏览器实测:建行 201 → 直传 R2 200(进度 100% + ETag)→ complete 200(`file_size` 与对象字节一致)→ 列表显示;worker 自动接手把这条 `uploaded→segmented`,接入既有切分链路。**投稿者上传流 slice 完整闭环。**
+- [x] **校对/审核工作台 `routes/Review.tsx` 已写**(2026-05-29):单页 `/review`,四 tab(待校对/待审核/已通过/已退回)按 `status` 拉 `GET /segments`;每段一张卡片:**懒加载预签名音频**(`▶ 加载音频`→`GET /segments/{id}/download-url`→`<audio>`)+ ASR 原文 + 校对文本框(`correct`)/ 通过·退回(`approve`/`reject`,退回带必填理由);rejected 段可重新校对。**reviewer/admin 专属**:topbar 入口按角色显示 + `RequireStaff` 路由守卫(contributor 撞 `/review` 退回首页)。`lib/endpoints.ts` + `types.ts` 加 segment 调用/类型。验证:tsc+lint 全绿、**contributor 门禁实测通过(无入口 + /review 重定向)**、页面挂载渲染无 console 报错(临时放开守卫截图空态后已还原)。**staff 侧动作的端到端验证待做**——需先在 VPS psql 把某账号提成 reviewer(冷启动,同 admin 引导),且需真实切出多段的录音(当前 prod 0 segments)。
 - 注:node 经 nvm 装 v24(本机原无 brew/node),详见下方「会咬人的隐藏知识」与 memory `project_frontend_dev_setup`。
 
 ### 可选下一步(MVP 后)

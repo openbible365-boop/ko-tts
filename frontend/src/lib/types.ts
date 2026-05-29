@@ -57,3 +57,37 @@ export interface RecordingCreateResponse {
   upload_url: string
   upload_expires_in: number
 }
+
+export type SegmentStatus =
+  | 'pending_transcription'
+  | 'transcribing'
+  | 'transcription_failed'
+  | 'pending_correction'
+  | 'pending_review'
+  | 'approved'
+  | 'rejected'
+
+export interface Segment {
+  id: string
+  recording_id: string
+  segment_index: number
+  start_ms: number
+  end_ms: number
+  duration_ms: number
+  audio_key: string | null
+  asr_text: string | null
+  text: string | null
+  status: SegmentStatus
+  corrected_by: string | null
+  corrected_at: string | null
+  reviewed_by: string | null
+  reviewed_at: string | null
+  rejection_reason: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface PresignedUrl {
+  url: string
+  expires_in: number
+}

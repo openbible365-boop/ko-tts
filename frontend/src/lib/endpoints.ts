@@ -1,8 +1,11 @@
 import { api } from './api'
 import type {
+  PresignedUrl,
   Recording,
   RecordingCreate,
   RecordingCreateResponse,
+  Segment,
+  SegmentStatus,
   Token,
   User,
 } from './types'
@@ -76,5 +79,35 @@ export function uploadFileToR2(
     }
     xhr.onerror = () => reject(new Error('上传到存储失败(网络或 CORS 错误)'))
     xhr.send(file)
+  })
+}
+
+// --- segments(校对 / 审核)---
+
+export function listSegments(
+  params: { status?: SegmentStatus; recordingId?: string } = {},
+): Promise<Segment[]> {
+  const q = new URLSearchParams()
+  if (params.status) q.set('status', params.status)
+  if (params.recordingId) q.set('recording_id', params.recordingId)
+  const qs = q.toString()
+  return api.request<Segment[]>(`/segments${qs ? `?${qs}` : ''}`)
+}
+
+export function getSegmentAudioUrl(id: string): Promise<PresignedUrl> {
+  return api.request<PresignedUrl>(`/segments/${id}/download-url`)
+}
+
+export function correctSegment(id: string, text: string): Promise<Segment> {
+  return api.request<Segment>(`/segments/${id}/correct`, { json: { text } })
+}
+
+export function approveSegment(id: string): Promise<Segment> {
+  return api.request<Segment>(`/segments/${id}/approve`, { method: 'POST' })
+}
+
+export function rejectSegment(id: string, rejectionReason: string): Promise<Segment> {
+  return api.request<Segment>(`/segments/${id}/reject`, {
+    json: { rejection_reason: rejectionReason },
   })
 }

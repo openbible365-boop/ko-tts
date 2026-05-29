@@ -15,6 +15,9 @@ export function Layout() {
             我的录音
           </NavLink>
           <NavLink to="/upload">上传</NavLink>
+          {user && (user.role === 'admin' || user.role === 'reviewer') && (
+            <NavLink to="/review">校对</NavLink>
+          )}
         </nav>
         <div className="spacer" />
         {user && (
