@@ -7,7 +7,7 @@ from httpx import AsyncClient
 from app.models import RecordingStatus
 
 
-async def _auth(token: str) -> dict:
+def _auth(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
