@@ -2,11 +2,13 @@ kr-tts.openbible.live {
 	encode gzip
 
 	header {
-		# 基础安全头 (HSTS 先不加, 等稳定再开下面那行)
 		X-Content-Type-Options nosniff
 		X-Frame-Options DENY
 		Referrer-Policy strict-origin-when-cross-origin
-		# Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		# HSTS: 1 年, 包含子域。
+		# 不发 `preload` 字面量 -- 那是为提交 hstspreload.org 准备的
+		# (浏览器内置后撤销周期数周, 想开再加 + 提交 https://hstspreload.org/)。
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		-Server
 	}
 

@@ -61,6 +61,10 @@ remote "cd '${REMOTE_DIR}/deploy' && ${COMPOSE} build"
 step "[6/8] docker compose up -d"
 remote "cd '${REMOTE_DIR}/deploy' && ${COMPOSE} up -d"
 
+# Caddyfile 是单文件 bind mount: rsync 原子替换会留旧 inode 在容器里,
+# 单纯 caddy reload 会看到 "config is unchanged"。restart 重建挂载, ~1s 抖动可接受。
+remote "cd '${REMOTE_DIR}/deploy' && ${COMPOSE} restart caddy" || true
+
 # g. 数据库迁移 (在 backend 容器里)
 step "[7/8] 等待 10s 后 alembic upgrade head"
 sleep 10
