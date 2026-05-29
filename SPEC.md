@@ -80,8 +80,9 @@
 
 - [x] **DB 备份已上线**(2026-05-29):`deploy/backup.sh`(pg_dump -Fc 通过宿主机 shell 管道串 backend 容器流式上传 R2,无中间落盘)+ `app/backup.py`(`upload`/`prune` CLI)+ `deploy/restore.sh`(下载 → 临时 DB → 校验表清单 → drop)。**daily 03:00 UTC** 由 deploy 用户 crontab 调度,保留 30 天,日志 `/opt/ko-tts/logs/backup.log`。首次备份 + restore 演练已通过
 
+- [x] **worker reaper 已上线**(2026-05-29):`_reap_stale(timeout_min)`,UPDATE 把 `segmenting>=N分钟` 退回 `uploaded`、`transcribing>=N分钟` 退回 `pending_transcription`。**worker 启动时 aggressive sweep(timeout=0,单 worker 假设)+ 主循环每 5 分钟跑一次(timeout=30 分钟,可配)**。线上注入卡死行→重启 worker→reaper 解锁→主循环重新处理(假数据走 failed 终态),全链路验证
+
 ### 可选下一步(MVP 后)
-- worker reaper(陈旧 claim 超时回滚,见 review 🔴3)
 - HSTS 打开(一行 Caddyfile)
 - auth 限速;自动化测试;CI
 - 导出 approved segments(给训练侧的清单/manifest;含预签名 audio_url + text + duration)

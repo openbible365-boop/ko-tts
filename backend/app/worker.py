@@ -7,12 +7,14 @@
 """
 
 import asyncio
+import datetime as dt
 import logging
 import os
 import tempfile
+import time
 import uuid
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select, update
 
 from app import asr, segmentation, storage
 from app.config import settings
@@ -166,6 +168,49 @@ async def _mark_segment_failed(seg_id: uuid.UUID) -> None:
         log.error("failed to mark seg %s failed: %r", seg_id, e)
 
 
+# ---------- reaper: 回收陈旧 claim ----------
+async def _reap_stale(timeout_min: int) -> tuple[int, int]:
+    """重置卡死的中间状态: 把 updated_at 早于 cutoff 的 segmenting/transcribing 退回队列。
+
+    timeout_min=0 表示"所有当前在中间状态的都算陈旧"(启动时用,
+    单 worker 假设下 boot 时残留的 in-progress 一定是上一个进程死前的)。
+    """
+    cutoff = dt.datetime.now(dt.UTC) - dt.timedelta(minutes=timeout_min)
+    async with SessionLocal() as s, s.begin():
+        r_res = await s.execute(
+            update(Recording)
+            .where(
+                Recording.status == RecordingStatus.segmenting.value,
+                Recording.updated_at < cutoff,
+            )
+            .values(status=RecordingStatus.uploaded.value, updated_at=func.now())
+            .returning(Recording.id)
+        )
+        r_count = len(r_res.scalars().all())
+
+        s_res = await s.execute(
+            update(Segment)
+            .where(
+                Segment.status == SegmentStatus.transcribing.value,
+                Segment.updated_at < cutoff,
+            )
+            .values(
+                status=SegmentStatus.pending_transcription.value,
+                updated_at=func.now(),
+            )
+            .returning(Segment.id)
+        )
+        s_count = len(s_res.scalars().all())
+
+    if r_count or s_count:
+        log.info(
+            "reaper: %d recording(s) segmenting->uploaded, "
+            "%d segment(s) transcribing->pending_transcription (timeout=%dm)",
+            r_count, s_count, timeout_min,
+        )
+    return r_count, s_count
+
+
 # ---------- loop ----------
 async def _try_transcribe_one() -> bool:
     seg_id = await _claim_segment()
@@ -196,14 +241,34 @@ async def _try_segment_one() -> bool:
 
 
 async def run() -> None:
-    log.info("worker starting; poll interval=%ss", settings.worker_poll_interval_sec)
+    log.info(
+        "worker starting; poll=%ss reap_every=%ss claim_timeout=%dm",
+        settings.worker_poll_interval_sec,
+        settings.worker_reap_interval_sec,
+        settings.worker_claim_timeout_min,
+    )
     try:
         await asyncio.to_thread(asr.warm_up)
     except Exception as e:  # noqa: BLE001  下载失败时延迟到首段再试, 不阻塞切分
         log.exception("ASR warm-up failed (will retry lazily): %r", e)
 
+    # 启动时 aggressive reap: 上一个 worker 进程死前留下的中间状态一律视为陈旧
+    try:
+        await _reap_stale(timeout_min=0)
+    except Exception as e:  # noqa: BLE001
+        log.exception("startup reap failed (continuing): %r", e)
+    last_reap = time.monotonic()
+
     while True:
         try:
+            now = time.monotonic()
+            if now - last_reap >= settings.worker_reap_interval_sec:
+                try:
+                    await _reap_stale(timeout_min=settings.worker_claim_timeout_min)
+                except Exception as e:  # noqa: BLE001
+                    log.exception("periodic reap failed (continuing): %r", e)
+                last_reap = now
+
             if await _try_transcribe_one():
                 continue
             if await _try_segment_one():

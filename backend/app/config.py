@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     asr_beam_size: int = 5
     asr_model_cache_dir: str = "/models"  # 容器内模型缓存目录, 走 named volume
 
+    # reaper: 回收陈旧的 worker claim (segmenting / transcribing 卡死)
+    worker_claim_timeout_min: int = 30  # 超过此时长仍在中间状态, 视为陈旧 -> 回退
+    worker_reap_interval_sec: float = 300.0  # worker 主循环里的 reap 周期 (5 min)
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
