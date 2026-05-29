@@ -1,0 +1,51 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: kotts
+          POSTGRES_PASSWORD: ci-test-pw
+          POSTGRES_DB: kotts_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kotts -d kotts_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: setup uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: install python 3.12 + deps
+        run: uv sync --frozen --python 3.12
+
+      - name: ruff lint
+        run: uv run --frozen --python 3.12 ruff check .
+
+      - name: pytest
+        env:
+          KOTTS_TEST_DATABASE_URL: postgresql+asyncpg://kotts:ci-test-pw@localhost:5432/kotts_test
+          JWT_SECRET: "0000000000000000000000000000000000000000000000000000000000000000"
+        run: uv run --frozen --python 3.12 pytest -v --tb=short

@@ -38,3 +38,8 @@ target-version = "py312"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+testpaths = ["tests"]
+filterwarnings = [
+    # bcrypt 5 在 passlib-less 直接用法上偶尔抛弃用警告;不影响功能,在 CI 噪音里压一下
+    "ignore::DeprecationWarning",
+]

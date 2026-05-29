@@ -80,6 +80,7 @@
 
 - [x] **DB 备份已上线**(2026-05-29):`deploy/backup.sh`(pg_dump -Fc 通过宿主机 shell 管道串 backend 容器流式上传 R2,无中间落盘)+ `app/backup.py`(`upload`/`prune` CLI)+ `deploy/restore.sh`(下载 → 临时 DB → 校验表清单 → drop)。**daily 03:00 UTC** 由 deploy 用户 crontab 调度,保留 30 天,日志 `/opt/ko-tts/logs/backup.log`。首次备份 + restore 演练已通过
 
+- [x] **自动化测试 + CI 已上线**(2026-05-29):`tests/unit/`(纯函数:`compute_segments` / `security` / Pydantic schemas)+ `tests/integration/`(httpx ASGITransport,真 Postgres,truncate-between-tests)。conftest 在 import app 前设 env 默认值;`need_db` fixture 让本地无 `KOTTS_TEST_DATABASE_URL` 时集成测试自动 skip。`.github/workflows/ci.yml`:ubuntu + `postgres:16-alpine` service + uv + ruff check + pytest。本地 26 unit 通过 / 10 integration skip
 - [x] **auth 限速已上线**(slowapi,内存后端):`POST /auth/login` 5/分钟、`POST /auth/register` 3/小时(per-IP,Caddy 转发的真实客户端 IP)。超限返回 429 `{"error":"Rate limit exceeded: ..."}`。线上端到端验证(连发 7 次 login → 第 6 起 429;连发 4 次 register → 第 4 起 429)。横向扩展时切 Redis 后端
 - [x] **HSTS 已开**(2026-05-29):Caddyfile `Strict-Transport-Security "max-age=31536000; includeSubDomains"`(不发 preload 字面量,等想提交 hstspreload.org 再加)。deploy.sh 改用 `restart caddy` 替代 `caddy reload`——因为 Caddyfile 是单文件 bind mount,rsync 原子替换留下旧 inode,reload 会看到 "config is unchanged",必须 restart 重建挂载
 - [x] **worker reaper 已上线**(2026-05-29):`_reap_stale(timeout_min)`,UPDATE 把 `segmenting>=N分钟` 退回 `uploaded`、`transcribing>=N分钟` 退回 `pending_transcription`。**worker 启动时 aggressive sweep(timeout=0,单 worker 假设)+ 主循环每 5 分钟跑一次(timeout=30 分钟,可配)**。线上注入卡死行→重启 worker→reaper 解锁→主循环重新处理(假数据走 failed 终态),全链路验证
