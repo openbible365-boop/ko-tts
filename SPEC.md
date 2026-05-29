@@ -114,3 +114,55 @@ worker 与 backend 共用同一镜像(含 ffmpeg),`command: python -m app.worker
 - 指纹: `SHA256:zOIbXXNApZoxEL3yTbNtfdSM44tg+7zvB7R6KNcexNA`
 - 验证: `ssh -o BatchMode=yes -i ~/.ssh/id_ed25519 root@149.28.149.67` → `key-login-ok`,host `sg-vhf`,Ubuntu 24.04.4 LTS。
 - 可选待办: 给 `~/.ssh/config` 加 host 别名;给 key 加 passphrase;后续考虑禁用 root 密码登录。
+
+---
+
+## 🚀 下次接手须知 (last updated 2026-05-29)
+
+> 给打开新会话的我自己,或新 Claude:**这一节 + 上面的"进度"清单 + 自动加载的 memory,通常就够上手。**
+
+### 此刻的快照
+- 后端 MVP **完整**,部署在 https://kr-tts.openbible.live(4 容器全 healthy)
+- 测试 90 个,CI 全绿(`https://github.com/openbible365-boop/ko-tts/actions`)
+- 最新 commit `302fecd`,11 commits total,branch=main
+- prod 库内容:**1 个 contributor**(jmdsong@gmail.com),0 recordings/0 segments
+- 想测试 admin API 前要先 psql 提权一次(冷启动 only):
+  ```sql
+  UPDATE users SET role='admin' WHERE email='jmdsong@gmail.com';
+  ```
+
+### 推荐阅读顺序(冷启动)
+1. 本节 + 上面的"进度"列表 —— 边界 + 现状
+2. 自动加载的 memory(`~/.claude/projects/-Users-joshua-Desktop-Projects-ko-tts/memory/`):**协作风格** + **SPEC 引用** + **R2 token IP 状态**
+3. `git log --oneline -15` —— 11 commits 全是 conventional 格式,扫一遍知本周做了啥
+4. 代码入口:`backend/app/main.py` → 5 个 router 文件 → `worker.py`
+5. 运维入口:`deploy/deploy.sh` + `DEPLOYMENT.md` + `backup.sh`
+
+### 自然的下一步(每条都自带没拍板的设计点)
+
+| 方向 | 量 | 还没拍板的事 |
+|---|---|---|
+| **前端 UI** | 大 (数天) | 栈选型(React+Vite+TanStack 是稳起点);要不要套现成 admin 模板;SSR 是否要 |
+| **训练侧 fetch 脚本** | 1h | 输出格式(LJSpeech-like 还是 JSONL+meta);本地缓存策略 |
+| **镜像瘦身** | 2-3h | 拆 backend / worker 两个 Dockerfile;backend 能从 1.58GB → ~300MB |
+| **CORS for 浏览器直传** | 1h | 给 `ob-tts-data` 配 CORS;在前端开始前做就行 |
+| **HSTS preload 提交** | 30min + 数周等审核 | **不可逆**,提交前确定 `kr-tts.openbible.live` 永远 HTTPS |
+| **密码重置 / 邮箱验证** | 各 1-2h | 要不要 SMTP;短期 token vs 邮件链接 |
+| **补完集成测试** | 已 60+,可继续加 | 目前覆盖 auth/recordings/segments/admin/export 五大 router |
+
+### 会咬人的隐藏知识(都已修,但要知道为啥那样写)
+
+1. **Docker 单文件 bind mount,改文件后容器看不到新内容** → 要 restart 容器(不是 reload)。`deploy.sh` 已自动 restart caddy。改 `compose.yml` 里别再回头加文件级 bind mount。
+2. **HuggingFace xet 下载器除 `HF_HUB_CACHE` 还按 `$HOME/.cache` 写** → 容器里 `$HOME=/app` 是只读源码区,Permission denied。修法在 `worker` 服务的 env:`HF_HOME=/models` + `XDG_CACHE_HOME=/models/.cache`。
+3. **Pytest SQLAlchemy 引擎跨 loop 失效** → `pyproject.toml` 设 `asyncio_default_{fixture,test}_loop_scope = "session"`。改成 function 立马 "Event loop is closed"。
+4. **`rsync --delete` 会扫宿主机数据卷** → `deploy.sh` 显式 `--exclude '/data/'` 和 `--exclude '/logs/'`;**改这两条 = 丢库/丢日志**。
+5. **R2 token 现在没有 IP 限制**(为了客户端 presigned PUT)→ token 安全只靠 `.env.prod` 不泄漏。如果以后改成 backend 中转上传,可以加回 IP 锁,详见 memory `project_r2_token_ip_lock`。
+6. **`test_recordings.py::_auth` 不能 async**(其它 router 的 `_auth` 也都是 sync)—— 一个一行的 typo 在 CI 里炸了 15 条用例;本地 skip 看不到,所以"只改测试代码"的 PR CI 第一次飘红别紧张,push 再试就行。
+
+### 不要随手改的清单
+- `RecordingStatus` / `SegmentStatus` **改/删现有值**会破坏现存数据(新增 OK,因为存 String 列)
+- `app/db.py` 的命名约定改了 → `alembic check` 会显示一堆伪迁移
+- 本地 `deploy/.env.prod` 和 VPS 上 `/opt/ko-tts/deploy/.env` 是同源(deploy.sh 拷的);**别两边各改各的,会漂移**
+
+### 会话开场白(给冷启动的新 Claude 抄)
+> "今天继续 ko-tts。先看 SPEC.md 底部'下次接手须知',然后我想做 _\<方向\>_。开始前先和我对齐 1-2 个设计决定。"
