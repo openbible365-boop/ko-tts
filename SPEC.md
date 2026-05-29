@@ -85,6 +85,8 @@
 - [x] **HSTS 已开**(2026-05-29):Caddyfile `Strict-Transport-Security "max-age=31536000; includeSubDomains"`(不发 preload 字面量,等想提交 hstspreload.org 再加)。deploy.sh 改用 `restart caddy` 替代 `caddy reload`——因为 Caddyfile 是单文件 bind mount,rsync 原子替换留下旧 inode,reload 会看到 "config is unchanged",必须 restart 重建挂载
 - [x] **worker reaper 已上线**(2026-05-29):`_reap_stale(timeout_min)`,UPDATE 把 `segmenting>=N分钟` 退回 `uploaded`、`transcribing>=N分钟` 退回 `pending_transcription`。**worker 启动时 aggressive sweep(timeout=0,单 worker 假设)+ 主循环每 5 分钟跑一次(timeout=30 分钟,可配)**。线上注入卡死行→重启 worker→reaper 解锁→主循环重新处理(假数据走 failed 终态),全链路验证
 
+- [x] **切分改"句末停顿就近下刀"**(2026-05-30):原 `compute_segments` 把长语音按 `max_len` 死板硬切(每段恰好 15.0s、常切在句中,不利校对)。改成**目标长度合并 + 静音边界断开**:把语音块合并到 ~`seg_target_segment_sec`(13s),在最近的静音(句末停顿)处收口;只有整段连续无停顿且超 `max`(18s)才兜底硬切。**关键是静音阈值**:对真实朗读(约翰福音1)做参数扫描发现其停顿带室内底噪、从不低于 -30dB,故旧 `-30dB/0.5s` 几乎扫不到停顿;改 **`-21dB/0.25s`** 后稳定捕捉。线上重切验证:`silences=275 -> 48 段`,时长 11~17.3s、中位 14.1s、**0 段硬切**,刀刀落在停顿。参数都在 settings,换录音源/麦克风环境可能要重调。单测 8 例覆盖新语义。
+
 ### 前端 UI 启动 — 投稿者上传流 slice(2026-05-29)
 - [x] **前端脚手架 `frontend/`(与 backend/ 平级,monorepo)**:**React + Vite + TypeScript SPA**,路由 `react-router-dom`,服务器态 `@tanstack/react-query`,纯 SPA 无 SSR。栈选型 + 首个 slice(投稿者上传流)由 joshua 拍板。
 - [x] **auth + 「我的录音」列表已跑通**:登录/注册页(注意 login 是 OAuth2 **form-encoded**)、会话保持(token 存 localStorage `kotts_token`,启动用 `/auth/me` 验活)、路由守卫、录音列表(react-query,流转中状态每 5s 轮询)。`lib/api.ts` fetch 封装 + `lib/endpoints.ts` 类型化调用对齐后端 schema。
