@@ -28,10 +28,16 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 RUN python -m venv /opt/sepvenv \
     && /opt/sepvenv/bin/pip install --no-cache-dir --upgrade pip
-# 先装 CPU torch, audio-separator 便不会再拉 CUDA 版
+# 三步必须在同一层(&&), 否则中间层会残留 CUDA torch 把镜像撑大:
+#  1. 先装配套的 CPU torch 三件套 -> audio-separator 见已满足, 不再拉 CUDA 版
+#  2. 装 audio-separator
+#  3. 强制重钉 CPU 三件套(--no-deps) -> 万一第 2 步换了 torchvision 导致
+#     "torchvision::nms does not exist" 不匹配, 这步纠正回配套的 CPU 版
 RUN /opt/sepvenv/bin/pip install --no-cache-dir \
-    torch --index-url https://download.pytorch.org/whl/cpu
-RUN /opt/sepvenv/bin/pip install --no-cache-dir "audio-separator[cpu]"
+        torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu \
+    && /opt/sepvenv/bin/pip install --no-cache-dir "audio-separator[cpu]" \
+    && /opt/sepvenv/bin/pip install --no-cache-dir --force-reinstall --no-deps \
+        torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 
 # ---------- 阶段 2: 运行时, 只带 .venv + 应用代码 ----------
 FROM python:3.12-slim-bookworm AS runtime
