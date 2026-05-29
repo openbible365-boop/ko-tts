@@ -55,6 +55,10 @@ export function completeUpload(id: string): Promise<Recording> {
   return api.request<Recording>(`/recordings/${id}/complete`, { method: 'POST' })
 }
 
+export function deleteRecording(id: string): Promise<void> {
+  return api.request<void>(`/recordings/${id}`, { method: 'DELETE' })
+}
+
 // 浏览器直传 R2 —— PUT 到预签名 URL(绝对地址, 不经 /api 代理)。
 // 用 XHR 而非 fetch 是为了拿上传进度。预签名 URL 未签 Content-Type,
 // 所以带上 file.type 不会破坏签名(只有 host 被签名)。

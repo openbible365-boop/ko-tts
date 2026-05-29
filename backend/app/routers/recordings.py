@@ -116,6 +116,34 @@ async def get_recording(
     return rec
 
 
+@router.delete("/{recording_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_recording(
+    recording_id: uuid.UUID, user: CurrentUser, session: SessionDep
+) -> None:
+    """删除录音及其所有切片(DB 行 + R2 对象)。owner 或 admin 可删。"""
+    rec = await session.get(Recording, recording_id)
+    if rec is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Recording not found")
+    if not (rec.uploaded_by == user.id or user.role == UserRole.admin.value):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not your recording")
+
+    # 先删 R2 对象(切片 wav + 录音原文件); DB 级联负责删 segment 行。
+    seg_keys = list(
+        await session.scalars(
+            select(Segment.audio_key).where(Segment.recording_id == recording_id)
+        )
+    )
+    for key in [*seg_keys, rec.audio_key]:
+        if key:
+            try:
+                await storage.delete_object(key)
+            except Exception:  # noqa: BLE001  R2 删除失败不应阻断 DB 清理(对象孤儿无害)
+                pass
+
+    await session.delete(rec)  # relationship cascade 删除 segments 行
+    await session.commit()
+
+
 @router.get("/{recording_id}/download-url", response_model=PresignedUrlResponse)
 async def download_url(
     recording_id: uuid.UUID, user: CurrentUser, session: SessionDep

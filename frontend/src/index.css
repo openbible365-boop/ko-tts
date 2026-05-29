@@ -265,6 +265,71 @@ button:disabled {
   background: var(--error);
   color: #fff;
 }
+.link-danger {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--error);
+}
+.link-danger:hover {
+  filter: none;
+  text-decoration: underline;
+}
+
+/* 列表行内操作 (校对 / 删除) */
+.row-actions {
+  display: flex;
+  gap: 0.9rem;
+  justify-content: flex-end;
+  white-space: nowrap;
+}
+
+/* 确认弹窗 */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  z-index: 50;
+}
+.modal {
+  width: 100%;
+  max-width: 420px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.5rem;
+}
+.modal h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.15rem;
+}
+.modal p {
+  margin: 0 0 1rem;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+/* 校对页: 单录音筛选提示条 */
+.filter-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0 0 1rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-soft);
+}
 
 /* --- 校对/审核工作台 --- */
 .tabs {

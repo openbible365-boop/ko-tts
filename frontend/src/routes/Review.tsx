@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link, useSearchParams } from 'react-router-dom'
 import {
   approveSegment,
   correctSegment,
+  getRecording,
   getSegmentAudioUrl,
   listSegments,
   rejectSegment,
@@ -32,15 +34,31 @@ function fmtDur(ms: number): string {
 }
 
 export function Review() {
+  const [searchParams] = useSearchParams()
+  const recordingId = searchParams.get('recording') || undefined
   const [tab, setTab] = useState<SegmentStatus>('pending_correction')
+
+  // 带 ?recording= 时, 只看这条录音的切片 (并取它的标题做提示)
+  const { data: rec } = useQuery({
+    queryKey: ['recording', recordingId],
+    queryFn: () => getRecording(recordingId as string),
+    enabled: !!recordingId,
+  })
+
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ['segments', tab],
-    queryFn: () => listSegments({ status: tab }),
+    queryKey: ['segments', tab, recordingId ?? null],
+    queryFn: () => listSegments({ status: tab, recordingId }),
   })
 
   return (
     <div>
       <h1>校对 / 审核</h1>
+      {recordingId && (
+        <p className="filter-banner">
+          只显示录音「{rec ? rec.title || rec.original_filename || rec.id.slice(0, 8) : '…'}」的切片
+          <Link to="/review">查看全部</Link>
+        </p>
+      )}
       <div className="tabs">
         {TABS.map((t) => (
           <button

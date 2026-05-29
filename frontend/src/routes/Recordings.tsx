@@ -1,7 +1,9 @@
-import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { listRecordings } from '../lib/endpoints'
-import type { ContentCategory, RecordingStatus } from '../lib/types'
+import { useAuth } from '../auth/AuthContext'
+import { deleteRecording, listRecordings } from '../lib/endpoints'
+import type { ContentCategory, Recording, RecordingStatus } from '../lib/types'
 
 const STATUS_LABEL: Record<RecordingStatus, string> = {
   pending_upload: '待上传',
@@ -30,13 +32,30 @@ function fmtDate(iso: string): string {
   return new Date(iso).toLocaleString()
 }
 
+function recLabel(r: Recording): string {
+  return r.title || r.original_filename || r.id.slice(0, 8)
+}
+
 export function Recordings() {
+  const { user } = useAuth()
+  const isStaff = user?.role === 'admin' || user?.role === 'reviewer'
+  const queryClient = useQueryClient()
+  const [deleteTarget, setDeleteTarget] = useState<Recording | null>(null)
+
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['recordings'],
     queryFn: listRecordings,
     // 若有录音在流转中, 每 5s 轮询一次追踪进度
     refetchInterval: (q) =>
       q.state.data?.some((r) => TRANSIENT.includes(r.status)) ? 5000 : false,
+  })
+
+  const del = useMutation({
+    mutationFn: (id: string) => deleteRecording(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['recordings'] })
+      setDeleteTarget(null)
+    },
   })
 
   if (isLoading) return <p className="muted">加载中…</p>
@@ -69,12 +88,13 @@ export function Recordings() {
             <th>状态</th>
             <th>大小</th>
             <th>创建时间</th>
+            <th />
           </tr>
         </thead>
         <tbody>
           {data.map((r) => (
             <tr key={r.id}>
-              <td>{r.title || r.original_filename || r.id.slice(0, 8)}</td>
+              <td>{recLabel(r)}</td>
               <td>{CATEGORY_LABEL[r.content_category]}</td>
               <td>
                 <span className={`badge badge-${r.status}`}>
@@ -83,10 +103,53 @@ export function Recordings() {
               </td>
               <td>{fmtSize(r.file_size_bytes)}</td>
               <td className="muted">{fmtDate(r.created_at)}</td>
+              <td className="row-actions">
+                {isStaff && <Link to={`/review?recording=${r.id}`}>校对</Link>}
+                <button
+                  className="link-danger"
+                  onClick={() => setDeleteTarget(r)}
+                >
+                  删除
+                </button>
+              </td>
             </tr>
           ))}
         </tbody>
       </table>
+
+      {deleteTarget && (
+        <div
+          className="modal-overlay"
+          onClick={() => !del.isPending && setDeleteTarget(null)}
+        >
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h2>删除录音?</h2>
+            <p>
+              将永久删除「{recLabel(deleteTarget)}」及其
+              <strong>所有切片</strong>(音频文件与校对 / 审核记录)。
+              <br />
+              此操作<strong>不可撤销</strong>。
+            </p>
+            {del.isError && <p className="error">{(del.error as Error).message}</p>}
+            <div className="modal-actions">
+              <button
+                className="btn-secondary"
+                disabled={del.isPending}
+                onClick={() => setDeleteTarget(null)}
+              >
+                取消
+              </button>
+              <button
+                className="btn-danger"
+                disabled={del.isPending}
+                onClick={() => del.mutate(deleteTarget.id)}
+              >
+                {del.isPending ? '删除中…' : '确认删除'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
