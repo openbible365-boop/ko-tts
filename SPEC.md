@@ -90,7 +90,7 @@
 - [x] **auth + 「我的录音」列表已跑通**:登录/注册页(注意 login 是 OAuth2 **form-encoded**)、会话保持(token 存 localStorage `kotts_token`,启动用 `/auth/me` 验活)、路由守卫、录音列表(react-query,流转中状态每 5s 轮询)。`lib/api.ts` fetch 封装 + `lib/endpoints.ts` 类型化调用对齐后端 schema。
 - [x] **dev 连后端 = Vite proxy**:`/api/*` 转发到生产 `https://kr-tts.openbible.live` 并剥 `/api` 前缀(后端路由无前缀),浏览器同源不触发 CORS;可用 `VITE_API_PROXY_TARGET` 覆盖。验证:build + lint + proxy 链路(health/401/form 登录)+ 浏览器渲染(登录页 + 守卫重定向)全通过,无 console 报错。
 - [x] **上传页已跑通**(2026-05-29):`routes/Upload.tsx` 完整三步流——建行 `POST /recordings` → 浏览器 XHR PUT 直传 R2(带进度条)→ `complete`;`lib/endpoints.ts` 加 `uploadFileToR2()`(XHR 拿进度,PUT 绝对预签名 URL 不经 `/api` 代理)。验证:tsc+lint 全绿、浏览器渲染正常、`POST /recordings` 返 201+预签名 URL;**直传那步在未配 CORS 时如期被 `Failed to fetch` 拦**(印证前置)。
-- [x] **R2 CORS 规则已写** `deploy/r2-cors.json`(仅放行 `http://localhost:5173`,方法 PUT/GET/HEAD)。**由 joshua 手动贴进 Cloudflare R2 → bucket → Settings → CORS Policy**。配好后上传页端到端即通。
+- [x] **R2 CORS 已配 + 端到端验证通过**(2026-05-29):规则 `deploy/r2-cors.json`(仅放行 `http://localhost:5173`,方法 PUT/GET/HEAD),joshua 已贴进 Cloudflare R2 → bucket → Settings → CORS Policy。浏览器实测:建行 201 → 直传 R2 200(进度 100% + ETag)→ complete 200(`file_size` 与对象字节一致)→ 列表显示;worker 自动接手把这条 `uploaded→segmented`,接入既有切分链路。**投稿者上传流 slice 完整闭环。**
 - 注:node 经 nvm 装 v24(本机原无 brew/node),详见下方「会咬人的隐藏知识」与 memory `project_frontend_dev_setup`。
 
 ### 可选下一步(MVP 后)
@@ -131,7 +131,7 @@ worker 与 backend 共用同一镜像(含 ffmpeg),`command: python -m app.worker
 
 ### 此刻的快照
 - 后端 MVP **完整**,部署在 https://kr-tts.openbible.live(4 容器全 healthy)
-- **前端 `frontend/` 投稿者上传流 slice 完成**:React+Vite SPA,auth + 「我的录音」列表 + **上传页**(建行→直传 R2→complete)全跑通(build/lint/渲染验证)。**唯一外部前置:R2 bucket CORS 由 joshua 贴 `deploy/r2-cors.json` 进 Cloudflare**——配好上传才能端到端成功。
+- **前端 `frontend/` 投稿者上传流 slice 完成 + 已 commit(`dc43808`)**:React+Vite SPA,auth + 「我的录音」列表 + **上传页**(建行→直传 R2→complete)全跑通。R2 CORS 已配(`deploy/r2-cors.json`,localhost:5173),浏览器端到端验证通过(`uploaded→segmented`)。
 - 测试 90 个,CI 全绿(`https://github.com/openbible365-boop/ko-tts/actions`)
 - 最新 commit `302fecd`,11 commits total,branch=main(前端改动 + `.claude/settings.local.json` 的 env/白名单改动均未提交)
 - prod 库内容:**1 个 contributor**(jmdsong@gmail.com),0 recordings/0 segments
