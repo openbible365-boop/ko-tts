@@ -107,7 +107,7 @@ docker compose -f docker-compose.prod.yml exec -T postgres pg_isready
 - **backend 起不来**:`docker compose logs backend`。常见是 `.env` 里 `DATABASE_URL` 写错(host 必须是 `postgres`)或缺 R2 凭据。
 - **alembic 报连不上库**:postgres 健康检查未过就跑了迁移;`docker compose ps` 看 postgres 是否 healthy,必要时重跑 `deploy.sh`。
 - **构建失败 `uv.lock not found`**:`backend/` 缺 `uv.lock`,在 backend 目录 `uv lock` 生成并提交。
-- **想回滚**:`git`(初始化后)切到旧 commit 重新 `deploy.sh`;数据库迁移回滚用 `alembic downgrade`。
+- **想回滚**:`git` 切到旧 commit 重新 `deploy.sh`;数据库迁移回滚用 `alembic downgrade`。
 - **改了 `POSTGRES_PASSWORD` 但 backend 仍报 `password authentication failed`**:Postgres 只在**首次初始化**数据目录(`/opt/ko-tts/data/postgres`)时按 `POSTGRES_PASSWORD` 建角色;目录已存在时改密码不生效。
   - 库里无重要数据 → 停服后 `sudo rm -rf /opt/ko-tts/data/postgres` 再 `up -d` 重新初始化;
   - 想保留数据 → 进容器同步角色密码(非破坏性):
@@ -123,5 +123,4 @@ docker compose -f docker-compose.prod.yml exec -T postgres pg_isready
 ## 稳定后再做
 
 - Caddyfile 取消注释启用 **HSTS**。
-- 给后端镜像加 `.dockerignore`(忽略 `.venv __pycache__ .git` 等),加快构建。
 - 数据库定期备份(`pg_dump` → R2)。

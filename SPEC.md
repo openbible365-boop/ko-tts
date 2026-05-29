@@ -39,6 +39,7 @@
 
 ### 本地
 - macOS,项目目录: `/Users/joshua/Desktop/Projects/ko-tts`
+- git 仓库: <https://github.com/openbible365-boop/ko-tts>(private,SSH 推送,key 已加到 GitHub)
 
 ### 对象存储
 - Cloudflare R2,bucket: `ob-tts-data`
