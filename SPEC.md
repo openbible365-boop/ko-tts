@@ -78,7 +78,12 @@
 
 - [x] **管理端点 `/admin/users` 已上线**:`GET`(分页 + role / is_active / email_like 过滤)、`GET /{id}`、`PATCH /{id}`(role/is_active 至少一项;**self-demote/self-deactivate 守护 400 防 admin 锁死**);停用用户的 token 立即失效(`get_current_user` 已查 `is_active`)。**首个 admin 仍靠 psql 引导**(`UPDATE users SET role='admin' WHERE email='...';`),之后均走 API
 
+- [x] **DB 备份已上线**(2026-05-29):`deploy/backup.sh`(pg_dump -Fc 通过宿主机 shell 管道串 backend 容器流式上传 R2,无中间落盘)+ `app/backup.py`(`upload`/`prune` CLI)+ `deploy/restore.sh`(下载 → 临时 DB → 校验表清单 → drop)。**daily 03:00 UTC** 由 deploy 用户 crontab 调度,保留 30 天,日志 `/opt/ko-tts/logs/backup.log`。首次备份 + restore 演练已通过
+
 ### 可选下一步(MVP 后)
+- worker reaper(陈旧 claim 超时回滚,见 review 🔴3)
+- HSTS 打开(一行 Caddyfile)
+- auth 限速;自动化测试;CI
 - 导出 approved segments(给训练侧的清单/manifest;含预签名 audio_url + text + duration)
 - 浏览器直传 R2 时 bucket CORS 配置
 - 前端 UI;批量操作;监控/统计

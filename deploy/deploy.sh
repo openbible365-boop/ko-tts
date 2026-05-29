@@ -40,6 +40,7 @@ rsync -az --delete \
   --exclude '*.pyc' \
   --exclude '.env' \
   --exclude '/data/' \
+  --exclude '/logs/' \
   "${REPO_ROOT}/" "${VPS_HOST}:${REMOTE_DIR}/"
 echo "OK"
 
