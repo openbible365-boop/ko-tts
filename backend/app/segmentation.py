@@ -58,9 +58,19 @@ def compute_segments(
     duration: float,
     silences: list[tuple[float, float | None]],
     min_len: float,
+    target_len: float,
     max_len: float,
 ) -> list[tuple[float, float]]:
-    """静音区间取补集得到语音段, 丢弃过短、切分过长。end 为 None 视为延伸到末尾。"""
+    """把语音切成 ~target_len 的片段, 并在句末停顿(静音)处下刀。
+
+    1. 静音区间取补集 -> 语音块(块之间就是停顿)。
+    2. 贪心合并相邻语音块: 当前段达到 target_len 就收, 或再加下一块会超过
+       max_len 就收 —— 收口处恰是某块的末尾, 即一个静音边界(句末停顿)。
+       这样每刀都落在停顿上, 段长在 ~target_len 上下浮动而非死板等分。
+    3. 兜底: 单块连续语音仍超过 max_len(整段无停顿)才硬切; 短于 min_len 的丢弃。
+
+    end 为 None 的静音(常见于文件结尾)视为延伸到末尾。
+    """
     cleaned: list[tuple[float, float]] = []
     for st, en in silences:
         st = max(0.0, st)
@@ -77,11 +87,24 @@ def compute_segments(
         cursor = max(cursor, en)
     if cursor < duration:
         speech.append((cursor, duration))
+    if not speech:
+        return []
 
+    # 贪心合并, 只在语音块端点(= 静音边界)处断开
+    merged: list[tuple[float, float]] = []
+    seg_start, seg_end = speech[0]
+    for st, en in speech[1:]:
+        cur = seg_end - seg_start
+        if cur >= target_len or (en - seg_start) > max_len:
+            merged.append((seg_start, seg_end))
+            seg_start, seg_end = st, en
+        else:
+            seg_end = en
+    merged.append((seg_start, seg_end))
+
+    # 兜底硬切 + 丢短
     out: list[tuple[float, float]] = []
-    for start, end in speech:
-        if end - start < min_len:
-            continue
+    for start, end in merged:
         s = start
         while end - s > max_len:
             out.append((round(s, 3), round(s + max_len, 3)))

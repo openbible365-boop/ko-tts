@@ -32,10 +32,13 @@ class Settings(BaseSettings):
     rate_limit_register: str = "3/hour"  # 防批量注册
 
     # 切分 (worker + ffmpeg silencedetect)
+    # 策略: 把语音块合并到 ~target 秒, 并在最近的静音(句末停顿)处下刀;
+    # 只有当单段连续语音超过 max 仍无停顿时, 才硬切(兜底)。
     seg_silence_noise_db: float = -30.0  # 静音判定阈值 (dB)
-    seg_min_silence_sec: float = 0.5  # 最短静音时长
-    seg_min_segment_sec: float = 1.0  # 丢弃短于此的片段
-    seg_max_segment_sec: float = 15.0  # 长于此的片段再切
+    seg_min_silence_sec: float = 0.35  # 最短静音时长 (调小以捕捉句末停顿)
+    seg_min_segment_sec: float = 3.0  # 丢弃短于此的片段
+    seg_target_segment_sec: float = 13.0  # 目标片段时长, 达到后在下一处停顿断开
+    seg_max_segment_sec: float = 18.0  # 硬上限: 无停顿时超过此长度才硬切
     seg_sample_rate: int = 24000  # 切片输出采样率 (单声道 wav)
     worker_poll_interval_sec: float = 5.0  # worker 空闲轮询间隔
 

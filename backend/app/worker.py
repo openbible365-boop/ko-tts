@@ -61,6 +61,7 @@ async def _process_recording(rec_id: uuid.UUID) -> None:
             meta["duration_ms"] / 1000.0,
             silences,
             settings.seg_min_segment_sec,
+            settings.seg_target_segment_sec,
             settings.seg_max_segment_sec,
         )
         log.info(
