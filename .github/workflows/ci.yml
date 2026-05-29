@@ -35,8 +35,6 @@ jobs:
 
       - name: setup uv
         uses: astral-sh/setup-uv@v3
-        with:
-          enable-cache: true
 
       - name: install python 3.12 + deps
         run: uv sync --frozen --python 3.12
