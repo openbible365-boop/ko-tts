@@ -30,6 +30,7 @@ export function Upload() {
 
   const [category, setCategory] = useState<ContentCategory>('sermon')
   const [title, setTitle] = useState('')
+  const [speaker, setSpeaker] = useState('')
   const [notes, setNotes] = useState('')
   const [removeMusic, setRemoveMusic] = useState(false)
   const [file, setFile] = useState<File | null>(null)
@@ -51,6 +52,7 @@ export function Upload() {
         original_filename: file.name,
         mime_type: file.type || null,
         title: title.trim() || null,
+        speaker: speaker.trim() || null,
         notes: notes.trim() || null,
         remove_music: removeMusic,
       })
@@ -97,6 +99,17 @@ export function Upload() {
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="例如:2026 春季主日讲道"
+            disabled={busy}
+          />
+        </label>
+
+        <label>
+          声音 / 说话人(训练按它分组,同一个声音请填一致)
+          <input
+            type="text"
+            value={speaker}
+            onChange={(e) => setSpeaker(e.target.value)}
+            placeholder="例如:남성1 / 여성1 / 朗读者名字"
             disabled={busy}
           />
         </label>

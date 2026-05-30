@@ -46,6 +46,7 @@ class RecordingCreate(BaseModel):
     title: str | None = Field(default=None, max_length=512)
     notes: str | None = None
     remove_music: bool = False  # 切分前剥掉背景音乐(人声分离)
+    speaker: str | None = Field(default=None, max_length=128)  # 声音/说话人标注
 
 
 class RecordingRead(BaseModel):
@@ -65,6 +66,7 @@ class RecordingRead(BaseModel):
     title: str | None
     notes: str | None
     remove_music: bool
+    speaker: str | None
     status: str
     created_at: datetime
     updated_at: datetime

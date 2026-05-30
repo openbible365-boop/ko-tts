@@ -164,6 +164,7 @@ export function Recordings() {
           <tr>
             <th>标题 / 文件名</th>
             <th>类别</th>
+            <th>声音</th>
             <th>状态</th>
             <th>大小</th>
             <th>创建时间</th>
@@ -175,6 +176,7 @@ export function Recordings() {
             <tr key={r.id}>
               <td>{recLabel(r)}</td>
               <td>{CATEGORY_LABEL[r.content_category]}</td>
+              <td>{r.speaker || <span className="muted">—</span>}</td>
               <td>
                 <StatusCell rec={r} />
               </td>

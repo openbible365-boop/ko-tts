@@ -40,6 +40,7 @@ export interface Recording {
   title: string | null
   notes: string | null
   remove_music: boolean
+  speaker: string | null
   status: RecordingStatus
   created_at: string
   updated_at: string
@@ -52,6 +53,7 @@ export interface RecordingCreate {
   title?: string | null
   notes?: string | null
   remove_music?: boolean
+  speaker?: string | null
 }
 
 export interface RecordingProgress {

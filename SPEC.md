@@ -100,6 +100,12 @@
 - [x] **处理进度反馈**(2026-05-30):录音列表状态格不再是干瘪的「切分中」。新 `GET /recordings/{id}/progress`(段计数 + `phase_elapsed_sec`= now-updated_at)。列表对处理中的录音轮询(3s):**切分/去音乐阶段**(无细粒度信号)显示动画不确定条 + 阶段(「去背景音乐 + 切分中」)+ 已用时;**ASR 阶段**显示真实 `转写 X/N 段` 确定条。解决去音乐那 ~28 分钟看着像冻住的问题。注:worker 重启(每次部署)会触发启动 reap 把 `segmenting` 退回重处理 —— 分离子进程随重启而死,重切是正确的,但频繁部署会反复打断长分离。
 - [x] **校对页:tab 顺序 + 已通过段的退回/删除 + 单段删除**(2026-05-30):tab 改为 待校对·待审核·**已退回·已通过**(已退回前移)。已通过卡片头部「已通过」徽章后加 **退回**(`reject` 放开 `approved→rejected`,理由改可选,回到已退回可再改)+ **删除**(新 `DELETE /segments/{id}`,reviewer/admin,删 R2 clip+行)。**部署技巧**:本次只改 backend API(worker 代码没动),用 `docker compose up -d --no-deps backend` 只重建 backend、**不重启 worker**,避免打断正在跑的去音乐分离。线上验证:退回 approved→rejected、删除段、tab 顺序全过。
 - [x] **前端已上线 `https://kr-tts.openbible.live/`**(2026-05-30):本地 `npm run build` → `frontend/dist`,rsync 到 VPS,**Caddy 同时服务 SPA + 反代 API**:`handle_path /api/*`→后端(剥 `/api`,同 dev proxy)、`/health`→后端、其余→`file_server` + `try_files … /index.html`(SPA 回退)。compose 给 caddy 加 `../frontend/dist:/srv:ro` 挂载。部署只重建 caddy(`up -d --no-deps caddy`),不动 backend/worker。验证:`/`=SPA、`/assets/*`=200、`/health`+`/api/health`=后端、`/review`=SPA 回退、`/api/auth/login`=token。**注 1**:`dist` 是 gitignore 的构建产物,前端改动要重新 `npm run build` + rsync(deploy.sh 暂未含此步)。**注 2**:浏览器直传 R2 需 CORS 放行新源 —— `deploy/r2-cors.json` 已加 `https://kr-tts.openbible.live`,**待 joshua 在 Cloudflare 重新应用**,否则线上上传会被 CORS 拦(登录/列表/校对/删除不受影响)。
+### 训练侧对接起步 — 说话人标注 + 数据集导出(2026-05-30)
+- 目标:用 GPT-SoVITS,拿采集的样本训出自定义朝鲜语**男声/女声**。算力:joshua 倾向 Mac-only(MPS 能训但磕碰,建议训练那一步租云 GPU);声音质量天花板取决于数据(10–60 分钟干净单说话人即够)。
+- [x] **录音加 `speaker`(声音/说话人)自由文本标注**(迁移 0003,索引):上传页加输入框、列表加「声音」列、`RecordingRead`/`Create` 带上。让数据能按声音分组出男/女。
+- [x] **导出 manifest 支持 speaker**:`GET /export/manifest.jsonl`(早已存在,导 approved 段:预签名 audio_url+text+duration)新增 `speaker` 字段 + `?speaker=` 精确筛选。
+- [x] **训练侧桥接脚本 `training/build_gptsovits_dataset.py`**(本仓库唯一训练侧代码,纯标准库):调 manifest → 下载 wav → 写 GPT-SoVITS 标注表 `wav|speaker|ko|text`。线上端到端验证(造 approved 段 + 真 wav → 脚本筛 speaker → 下载 + 生成 train.list,格式/采样率正确)。注:脚本加了 `from __future__ import annotations` 兼容旧 python3(joshua 本机 python3=3.9)。
+- 下一步:① 真采男/女各 10–60 分钟并 approve;② 定训练算力(云 GPU vs Mac MPS);③ 跑 GPT-SoVITS few-shot baseline 试听。
 - 注:node 经 nvm 装 v24(本机原无 brew/node),详见下方「会咬人的隐藏知识」与 memory `project_frontend_dev_setup`。
 
 ### 可选下一步(MVP 后)

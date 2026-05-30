@@ -90,6 +90,8 @@ class Recording(TimestampMixin, Base):
     content_category: Mapped[str] = mapped_column(String(32), nullable=False)
     title: Mapped[str | None] = mapped_column(String(512))
     notes: Mapped[str | None] = mapped_column(Text)
+    # 声音/说话人标注(自由文本, 如 "남성1"/"여성1"/名字), 训练侧按它分组出男/女声
+    speaker: Mapped[str | None] = mapped_column(String(128), index=True)
     # 投稿者上传时勾选: 切分前先做人声分离, 剥掉背景音乐
     remove_music: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")

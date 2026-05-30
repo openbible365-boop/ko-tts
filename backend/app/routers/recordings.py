@@ -54,6 +54,7 @@ async def create_recording(
         title=data.title,
         notes=data.notes,
         remove_music=data.remove_music,
+        speaker=data.speaker,
         status=RecordingStatus.pending_upload.value,
     )
     session.add(rec)

@@ -36,6 +36,9 @@ async def export_manifest(
         Query(description="包含哪些状态;默认仅 approved"),
     ] = None,
     content_category: Annotated[ContentCategory | None, Query()] = None,
+    speaker: Annotated[
+        str | None, Query(max_length=128, description="按声音/说话人筛选(精确匹配)")
+    ] = None,
     url_ttl_hours: Annotated[
         int, Query(ge=1, le=MAX_URL_TTL_HOURS, description="预签名 URL 有效期(小时)")
     ] = DEFAULT_URL_TTL_HOURS,
@@ -44,19 +47,21 @@ async def export_manifest(
     expires_in = url_ttl_hours * 3600
 
     stmt = (
-        select(Segment, Recording.content_category)
+        select(Segment, Recording.content_category, Recording.speaker)
         .join(Recording, Segment.recording_id == Recording.id)
         .where(Segment.status.in_(statuses))
         .order_by(Segment.created_at)
     )
     if content_category is not None:
         stmt = stmt.where(Recording.content_category == content_category.value)
+    if speaker is not None:
+        stmt = stmt.where(Recording.speaker == speaker)
     rows = (await session.execute(stmt)).all()
 
     async def stream() -> AsyncIterator[bytes]:
         # 共享一个 R2 client, 不要 N 段 N 个 client
         async with storage._client() as s3:
-            for seg, category in rows:
+            for seg, category, spk in rows:
                 url = await s3.generate_presigned_url(
                     "get_object",
                     Params={"Bucket": settings.r2_bucket, "Key": seg.audio_key},
@@ -69,6 +74,7 @@ async def export_manifest(
                     "audio_key": seg.audio_key,
                     "duration_ms": seg.duration_ms,
                     "sample_rate": settings.seg_sample_rate,
+                    "speaker": spk,
                     "content_category": category,
                     "status": seg.status,
                     "reviewed_at": seg.reviewed_at.isoformat() if seg.reviewed_at else None,
