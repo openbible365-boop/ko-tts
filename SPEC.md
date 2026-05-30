@@ -106,7 +106,10 @@
 - [x] **导出 manifest 支持 speaker**:`GET /export/manifest.jsonl`(早已存在,导 approved 段:预签名 audio_url+text+duration)新增 `speaker` 字段 + `?speaker=` 精确筛选。
 - [x] **训练侧桥接脚本 `training/build_gptsovits_dataset.py`**(本仓库唯一训练侧代码,纯标准库):调 manifest → 下载 wav → 写 GPT-SoVITS 标注表 `wav|speaker|ko|text`。线上端到端验证(造 approved 段 + 真 wav → 脚本筛 speaker → 下载 + 生成 train.list,格式/采样率正确)。注:脚本加了 `from __future__ import annotations` 兼容旧 python3(joshua 本机 python3=3.9)。
 - [x] **一键导出数据集按钮**(2026-05-30):校对页头部「⬇ 导出数据集(已通过)」→ `GET /export/dataset.zip`(staff;内存组 zip:`wavs/<id>.wav` + GPT-SoVITS `train.list`(`wav|speaker|ko|text`)+ README;支持 `?speaker=`/`?content_category=`/`?status=` 筛选)。前端带鉴权头 fetch→blob 触发下载。线上实测:48 段 approved → 31.4MB zip、48 wav + train.list(已带 speaker `남성1`),wav 校验为合法 RIFF。
-- 下一步:① 真采男/女各 10–60 分钟并 approve;② 定训练算力(云 GPU vs Mac MPS);③ 跑 GPT-SoVITS few-shot baseline 试听。
+- [x] **切片采样率 24k→32k**(2026-05-30):`seg_sample_rate=32000`(GPT-SoVITS 内部即 32k,取之为保真上限)。**只影响之后新切的段**;已切的旧段(如那 48 段 남성1)仍是 24k —— 要统一可重切(会保留校对文本的话需专门脚本,普通重切会清掉 approve)。
+- [x] **Mac 训练教程 `training/GPT_SOVITS_MAC.md`**:Apple Silicon 上装 GPT-SoVITS v2(`install.sh --device MPS`)+ `PYTORCH_ENABLE_MPS_FALLBACK=1` + 接入导出的 zip(相对→绝对路径)+ 跳过自带切分/ASR + 预处理3步 + 训 SoVITS/GPT + 推理 + 排坑表。诚实标注:Mac 训练慢、偶尔排坑,推理没问题,嫌慢就云 GPU 训。
+- 下一步:① 真采男/女各 10–60 分钟并 approve;② Mac 上按教程跑 GPT-SoVITS;③ baseline 试听 → 迭代。
+- 待定:存量 48 段 남성1 是否重切到 32k(需保文本的专门脚本);切片采样率字段在 manifest 里现统一报 settings 值, 旧 24k 段会被标成 32k(无害, GPT-SoVITS 读 wav 头为准)。
 - 注:node 经 nvm 装 v24(本机原无 brew/node),详见下方「会咬人的隐藏知识」与 memory `project_frontend_dev_setup`。
 
 ### 可选下一步(MVP 后)

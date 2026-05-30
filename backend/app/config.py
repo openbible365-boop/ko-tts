@@ -42,7 +42,9 @@ class Settings(BaseSettings):
     seg_min_segment_sec: float = 3.0  # 丢弃短于此的片段
     seg_target_segment_sec: float = 13.0  # 目标片段时长, 达到后在下一处停顿断开
     seg_max_segment_sec: float = 18.0  # 硬上限: 无停顿时超过此长度才硬切
-    seg_sample_rate: int = 24000  # 切片输出采样率 (单声道 wav)
+    # 32kHz: GPT-SoVITS 内部即 32k, 取之为训练级保真上限(再高它也会降采样)。
+    # 改此值只影响之后新切的段; 已切的旧段仍是当时的采样率。
+    seg_sample_rate: int = 32000  # 切片输出采样率 (单声道 wav)
 
     # 人声分离 (audio-separator, 独立 venv, 仅当 recording.remove_music=True 时启用)
     sep_model_filename: str = "UVR-MDX-NET-Voc_FT.onnx"
