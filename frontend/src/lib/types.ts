@@ -54,6 +54,15 @@ export interface RecordingCreate {
   remove_music?: boolean
 }
 
+export interface RecordingProgress {
+  status: RecordingStatus
+  remove_music: boolean
+  segment_total: number
+  transcribed: number
+  in_transcription: number
+  phase_elapsed_sec: number
+}
+
 export interface RecordingCreateResponse {
   recording: Recording
   upload_url: string

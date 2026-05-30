@@ -76,6 +76,15 @@ class RecordingCreateResponse(BaseModel):
     upload_expires_in: int
 
 
+class RecordingProgress(BaseModel):
+    status: str
+    remove_music: bool
+    segment_total: int
+    transcribed: int  # 已转写(过了 ASR)的段数
+    in_transcription: int  # 待转写 + 转写中
+    phase_elapsed_sec: int  # 当前阶段已用秒数(= now - updated_at)
+
+
 class PresignedUrlResponse(BaseModel):
     url: str
     expires_in: int

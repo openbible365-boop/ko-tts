@@ -4,6 +4,7 @@ import type {
   Recording,
   RecordingCreate,
   RecordingCreateResponse,
+  RecordingProgress,
   Segment,
   SegmentStatus,
   Token,
@@ -57,6 +58,10 @@ export function completeUpload(id: string): Promise<Recording> {
 
 export function deleteRecording(id: string): Promise<void> {
   return api.request<void>(`/recordings/${id}`, { method: 'DELETE' })
+}
+
+export function getRecordingProgress(id: string): Promise<RecordingProgress> {
+  return api.request<RecordingProgress>(`/recordings/${id}/progress`)
 }
 
 // 浏览器直传 R2 —— PUT 到预签名 URL(绝对地址, 不经 /api 代理)。

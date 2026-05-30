@@ -317,6 +317,46 @@ button:disabled {
   gap: 0.5rem;
 }
 
+/* 列表状态格: 徽章 + 进度条 + 阶段说明 */
+.status-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.progress-text {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.progress-bar {
+  width: 150px;
+  height: 5px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-soft);
+  overflow: hidden;
+}
+.progress-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+/* 不确定进度(切分/去音乐): 一段高亮来回滑动 */
+.progress-bar.indeterminate > span {
+  width: 35%;
+  animation: indeterminate 1.3s ease-in-out infinite;
+}
+@keyframes indeterminate {
+  0% {
+    margin-left: -35%;
+  }
+  100% {
+    margin-left: 100%;
+  }
+}
+
 /* 校对页: 单录音筛选提示条 */
 .filter-banner {
   display: flex;

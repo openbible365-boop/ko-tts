@@ -2,7 +2,11 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
-import { deleteRecording, listRecordings } from '../lib/endpoints'
+import {
+  deleteRecording,
+  getRecordingProgress,
+  listRecordings,
+} from '../lib/endpoints'
 import type { ContentCategory, Recording, RecordingStatus } from '../lib/types'
 
 const STATUS_LABEL: Record<RecordingStatus, string> = {
@@ -34,6 +38,81 @@ function fmtDate(iso: string): string {
 
 function recLabel(r: Recording): string {
   return r.title || r.original_filename || r.id.slice(0, 8)
+}
+
+function fmtElapsed(sec: number): string {
+  const m = Math.floor(sec / 60)
+  const s = sec % 60
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
+// 状态格: 处理中的录音轮询 /progress, 展示进度条 + 阶段说明 + 已用时,
+// 让「切分中」(尤其去背景音乐那 ~28 分钟)不再是个不动的字。
+function StatusCell({ rec }: { rec: Recording }) {
+  const maybeActive =
+    rec.status === 'uploaded' ||
+    rec.status === 'segmenting' ||
+    rec.status === 'segmented'
+
+  const { data: p } = useQuery({
+    queryKey: ['progress', rec.id],
+    queryFn: () => getRecordingProgress(rec.id),
+    enabled: maybeActive,
+    refetchInterval: (q) => {
+      const d = q.state.data
+      if (!d) return 3000
+      const done = d.status === 'segmented' && d.in_transcription === 0
+      return done ? false : 3000
+    },
+  })
+
+  const badge = (
+    <span className={`badge badge-${rec.status}`}>{STATUS_LABEL[rec.status]}</span>
+  )
+
+  // 待上传(等客户端传完)/ 失败: 只显示徽章
+  if (rec.status === 'pending_upload' || rec.status === 'failed') return badge
+
+  // 切分/分离阶段: 此阶段无细粒度信号, 用动画条 + 阶段 + 已用时
+  if (rec.status === 'uploaded' || rec.status === 'segmenting') {
+    const label =
+      rec.status === 'uploaded'
+        ? '排队中…'
+        : rec.remove_music
+          ? '去背景音乐 + 切分中'
+          : '切分中'
+    return (
+      <div className="status-cell">
+        {badge}
+        <div className="progress-bar indeterminate">
+          <span />
+        </div>
+        <span className="progress-text">
+          {label}
+          {p ? ` · 已用 ${fmtElapsed(p.phase_elapsed_sec)}` : ''}
+        </span>
+      </div>
+    )
+  }
+
+  // 已切分但 ASR 还在跑: 真实进度条 X/N
+  if (p && p.segment_total > 0 && p.in_transcription > 0) {
+    const pct = Math.round((p.transcribed / p.segment_total) * 100)
+    return (
+      <div className="status-cell">
+        {badge}
+        <div className="progress-bar">
+          <span style={{ width: `${pct}%` }} />
+        </div>
+        <span className="progress-text">
+          转写 {p.transcribed}/{p.segment_total} 段
+        </span>
+      </div>
+    )
+  }
+
+  // 已切分且转写完成 / 无切片: 只显示徽章
+  return badge
 }
 
 export function Recordings() {
@@ -97,9 +176,7 @@ export function Recordings() {
               <td>{recLabel(r)}</td>
               <td>{CATEGORY_LABEL[r.content_category]}</td>
               <td>
-                <span className={`badge badge-${r.status}`}>
-                  {STATUS_LABEL[r.status]}
-                </span>
+                <StatusCell rec={r} />
               </td>
               <td>{fmtSize(r.file_size_bytes)}</td>
               <td className="muted">{fmtDate(r.created_at)}</td>

@@ -1,18 +1,20 @@
 import os
 import re
 import uuid
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app import storage
 from app.deps import CurrentUser, SessionDep
-from app.models import Recording, RecordingStatus, Segment, User, UserRole
+from app.models import Recording, RecordingStatus, Segment, SegmentStatus, User, UserRole
 from app.schemas import (
     PresignedUrlResponse,
     RecordingCreate,
     RecordingCreateResponse,
+    RecordingProgress,
     RecordingRead,
     SegmentRead,
 )
@@ -114,6 +116,40 @@ async def get_recording(
     if not _can_access(user, rec):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Forbidden")
     return rec
+
+
+@router.get("/{recording_id}/progress", response_model=RecordingProgress)
+async def recording_progress(
+    recording_id: uuid.UUID, user: CurrentUser, session: SessionDep
+) -> RecordingProgress:
+    """处理进度: 切分/转写阶段的细粒度信息(列表轮询用, 比裸 status 更可读)。"""
+    rec = await session.get(Recording, recording_id)
+    if rec is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Recording not found")
+    if not _can_access(user, rec):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Forbidden")
+
+    result = await session.execute(
+        select(Segment.status, func.count())
+        .where(Segment.recording_id == recording_id)
+        .group_by(Segment.status)
+    )
+    counts = {s: n for s, n in result.all()}
+    total = sum(counts.values())
+    in_tx = counts.get(SegmentStatus.pending_transcription.value, 0) + counts.get(
+        SegmentStatus.transcribing.value, 0
+    )
+    elapsed = (
+        (datetime.now(UTC) - rec.updated_at).total_seconds() if rec.updated_at else 0.0
+    )
+    return RecordingProgress(
+        status=rec.status,
+        remove_music=rec.remove_music,
+        segment_total=total,
+        transcribed=total - in_tx,
+        in_transcription=in_tx,
+        phase_elapsed_sec=int(max(0.0, elapsed)),
+    )
 
 
 @router.delete("/{recording_id}", status_code=status.HTTP_204_NO_CONTENT)
