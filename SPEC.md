@@ -105,6 +105,7 @@
 - [x] **录音加 `speaker`(声音/说话人)自由文本标注**(迁移 0003,索引):上传页加输入框、列表加「声音」列、`RecordingRead`/`Create` 带上。让数据能按声音分组出男/女。
 - [x] **导出 manifest 支持 speaker**:`GET /export/manifest.jsonl`(早已存在,导 approved 段:预签名 audio_url+text+duration)新增 `speaker` 字段 + `?speaker=` 精确筛选。
 - [x] **训练侧桥接脚本 `training/build_gptsovits_dataset.py`**(本仓库唯一训练侧代码,纯标准库):调 manifest → 下载 wav → 写 GPT-SoVITS 标注表 `wav|speaker|ko|text`。线上端到端验证(造 approved 段 + 真 wav → 脚本筛 speaker → 下载 + 生成 train.list,格式/采样率正确)。注:脚本加了 `from __future__ import annotations` 兼容旧 python3(joshua 本机 python3=3.9)。
+- [x] **一键导出数据集按钮**(2026-05-30):校对页头部「⬇ 导出数据集(已通过)」→ `GET /export/dataset.zip`(staff;内存组 zip:`wavs/<id>.wav` + GPT-SoVITS `train.list`(`wav|speaker|ko|text`)+ README;支持 `?speaker=`/`?content_category=`/`?status=` 筛选)。前端带鉴权头 fetch→blob 触发下载。线上实测:48 段 approved → 31.4MB zip、48 wav + train.list(已带 speaker `남성1`),wav 校验为合法 RIFF。
 - 下一步:① 真采男/女各 10–60 分钟并 approve;② 定训练算力(云 GPU vs Mac MPS);③ 跑 GPT-SoVITS few-shot baseline 试听。
 - 注:node 经 nvm 装 v24(本机原无 brew/node),详见下方「会咬人的隐藏知识」与 memory `project_frontend_dev_setup`。
 

@@ -5,6 +5,7 @@ import {
   approveSegment,
   correctSegment,
   deleteSegment,
+  downloadDataset,
   getRecording,
   getSegmentAudioUrl,
   listSegments,
@@ -51,9 +52,30 @@ export function Review() {
     queryFn: () => listSegments({ status: tab, recordingId }),
   })
 
+  // 一键把已通过的切片打包成 GPT-SoVITS 数据集 zip
+  const exportM = useMutation({
+    mutationFn: () => downloadDataset({ status: 'approved' }),
+  })
+
   return (
     <div>
-      <h1>校对 / 审核</h1>
+      <div className="page-head">
+        <h1>校对 / 审核</h1>
+        <button
+          className="btn-secondary"
+          disabled={exportM.isPending}
+          onClick={() => exportM.mutate()}
+          title="把所有已通过的切片打包成 GPT-SoVITS 数据集(wavs + train.list)"
+        >
+          {exportM.isPending ? '导出中…' : '⬇ 导出数据集(已通过)'}
+        </button>
+      </div>
+      {exportM.isError && (
+        <p className="error">{(exportM.error as Error).message}</p>
+      )}
+      {exportM.isSuccess && (
+        <p className="muted">已导出 {exportM.data} 段为 ko-tts-dataset.zip。</p>
+      )}
       {recordingId && (
         <p className="filter-banner">
           只显示录音「{rec ? rec.title || rec.original_filename || rec.id.slice(0, 8) : '…'}」的切片

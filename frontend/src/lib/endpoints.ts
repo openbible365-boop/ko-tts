@@ -1,4 +1,4 @@
-import { api } from './api'
+import { api, getToken } from './api'
 import type {
   PresignedUrl,
   Recording,
@@ -126,4 +126,31 @@ export function rejectSegment(
 
 export function deleteSegment(id: string): Promise<void> {
   return api.request<void>(`/segments/${id}`, { method: 'DELETE' })
+}
+
+// 下载 GPT-SoVITS 数据集 zip(wavs/ + train.list)。带鉴权头, 故用 fetch+blob
+// 自己触发下载, 不能用裸 <a href>。返回打包的段数。
+export async function downloadDataset(
+  opts: { status?: string; speaker?: string } = {},
+): Promise<number> {
+  const q = new URLSearchParams()
+  if (opts.status) q.set('status', opts.status)
+  if (opts.speaker) q.set('speaker', opts.speaker)
+  const qs = q.toString()
+  const token = getToken()
+  const res = await fetch(`/api/export/dataset.zip${qs ? `?${qs}` : ''}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  if (!res.ok) throw new Error(`导出失败 (HTTP ${res.status})`)
+  const count = Number(res.headers.get('X-Export-Segments') || '0')
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'ko-tts-dataset.zip'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+  return count
 }

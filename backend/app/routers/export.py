@@ -4,7 +4,9 @@
 client 上下文批量签 URL, 避免 N 段 = N 次 client 开关销。
 """
 
+import io
 import json
+import zipfile
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Annotated
@@ -88,6 +90,78 @@ async def export_manifest(
             "Content-Disposition": f'attachment; filename="ko-tts-manifest-{datetime.now(UTC).date()}.jsonl"',
             "X-Export-Statuses": ",".join(statuses),
             "X-Export-URL-TTL-Hours": str(url_ttl_hours),
+        },
+    )
+
+
+_README = (
+    "ko-tts 数据集 (GPT-SoVITS)\n\n"
+    "  wavs/<id>.wav   切片音频\n"
+    "  train.list      标注表, 每行: wavs/<id>.wav|speaker|语言|文本\n\n"
+    "用法: 解压后把 train.list 填进 GPT-SoVITS WebUI 的标注表路径。\n"
+    "路径是相对的(相对本文件夹), 若 GPT-SoVITS 要绝对路径, 在解压目录里跑:\n"
+    "  python - <<'PY'\n"
+    "  import os\n"
+    "  d=os.getcwd()\n"
+    "  ls=[l for l in open('train.list',encoding='utf-8') if l.strip()]\n"
+    "  open('train.list','w',encoding='utf-8').write(''.join(\n"
+    "    os.path.join(d,l.split('|',1)[0])+'|'+l.split('|',1)[1] for l in ls))\n"
+    "  PY\n"
+)
+
+
+@router.get("/dataset.zip")
+async def export_dataset_zip(
+    me: StaffOnly,
+    session: SessionDep,
+    status: Annotated[list[SegmentStatus] | None, Query()] = None,
+    content_category: Annotated[ContentCategory | None, Query()] = None,
+    speaker: Annotated[str | None, Query(max_length=128)] = None,
+    language: Annotated[str, Query(max_length=8, description="GPT-SoVITS 语言码")] = "ko",
+) -> StreamingResponse:
+    """把(默认 approved)切片打包成 GPT-SoVITS 数据集 zip: wavs/ + train.list。
+
+    一次性在内存里组 zip(数据集通常几十~几百段、几十 MB, 够用); 真到上万段
+    再改流式。
+    """
+    statuses = [s.value for s in (status or [SegmentStatus.approved])]
+    stmt = (
+        select(Segment, Recording.speaker)
+        .join(Recording, Segment.recording_id == Recording.id)
+        .where(Segment.status.in_(statuses))
+        .where(Segment.text.isnot(None))
+        .where(Segment.audio_key.isnot(None))
+        .order_by(Segment.created_at)
+    )
+    if content_category is not None:
+        stmt = stmt.where(Recording.content_category == content_category.value)
+    if speaker is not None:
+        stmt = stmt.where(Recording.speaker == speaker)
+    rows = (await session.execute(stmt)).all()
+
+    buf = io.BytesIO()
+    lines: list[str] = []
+    async with storage._client() as s3:
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for seg, spk in rows:
+                resp = await s3.get_object(Bucket=settings.r2_bucket, Key=seg.audio_key)
+                async with resp["Body"] as body:
+                    data = await body.read()
+                arc = f"wavs/{seg.id}.wav"
+                zf.writestr(arc, data)
+                spk_name = spk or speaker or "speaker"
+                lines.append(f"{arc}|{spk_name}|{language}|{seg.text.strip()}")
+            zf.writestr("train.list", "\n".join(lines) + ("\n" if lines else ""))
+            zf.writestr("README.txt", _README)
+
+    payload = buf.getvalue()
+    fname = f"ko-tts-dataset-{datetime.now(UTC).date()}.zip"
+    return StreamingResponse(
+        iter([payload]),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{fname}"',
+            "X-Export-Segments": str(len(lines)),
         },
     )
 
