@@ -4,6 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import {
   approveSegment,
   correctSegment,
+  deleteSegment,
   getRecording,
   getSegmentAudioUrl,
   listSegments,
@@ -15,8 +16,8 @@ import type { Segment, SegmentStatus } from '../lib/types'
 const TABS: { value: SegmentStatus; label: string }[] = [
   { value: 'pending_correction', label: '待校对' },
   { value: 'pending_review', label: '待审核' },
-  { value: 'approved', label: '已通过' },
   { value: 'rejected', label: '已退回' },
+  { value: 'approved', label: '已通过' },
 ]
 
 const STATUS_LABEL: Record<SegmentStatus, string> = {
@@ -91,15 +92,46 @@ function SegmentCard({ seg }: { seg: Segment }) {
   // 动作后失效全部 segments 查询(当前 tab 会少一条, 目标 tab 会多一条)
   const onDone = () => queryClient.invalidateQueries({ queryKey: ['segments'] })
 
+  // 已通过的段: 头部「已通过」徽章后跟 退回(→已退回再改) / 删除
+  const sendBack = useMutation({
+    mutationFn: () => rejectSegment(seg.id),
+    onSuccess: onDone,
+  })
+  const del = useMutation({
+    mutationFn: () => deleteSegment(seg.id),
+    onSuccess: onDone,
+  })
+  const approvedBusy = sendBack.isPending || del.isPending
+
   return (
     <div className="seg-card">
       <div className="seg-head">
         <span className="muted">
           #{seg.segment_index} · {fmtDur(seg.duration_ms)}
         </span>
-        <span className={`badge badge-seg-${seg.status}`}>
-          {STATUS_LABEL[seg.status]}
-        </span>
+        <div className="seg-head-actions">
+          <span className={`badge badge-seg-${seg.status}`}>
+            {STATUS_LABEL[seg.status]}
+          </span>
+          {seg.status === 'approved' && (
+            <>
+              <button
+                className="link-btn"
+                disabled={approvedBusy}
+                onClick={() => sendBack.mutate()}
+              >
+                {sendBack.isPending ? '退回中…' : '退回'}
+              </button>
+              <button
+                className="link-danger"
+                disabled={approvedBusy}
+                onClick={() => del.mutate()}
+              >
+                {del.isPending ? '删除中…' : '删除'}
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       <SegmentAudio segmentId={seg.id} hasAudio={!!seg.audio_key} />
@@ -117,6 +149,11 @@ function SegmentCard({ seg }: { seg: Segment }) {
         <div className="seg-field">
           <span className="seg-label">已通过文本</span>
           <p className="seg-text">{seg.text}</p>
+          {(sendBack.isError || del.isError) && (
+            <p className="error">
+              {((sendBack.error || del.error) as Error).message}
+            </p>
+          )}
         </div>
       ) : (
         // pending_correction | rejected —— 都可(重新)校对

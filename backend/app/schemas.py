@@ -117,7 +117,8 @@ class SegmentCorrect(BaseModel):
 
 
 class SegmentReject(BaseModel):
-    rejection_reason: str = Field(min_length=1, max_length=1000)
+    # 从 pending_review 退回时通常带理由; 从 approved 直接退回改可不填
+    rejection_reason: str | None = Field(default=None, max_length=1000)
 
 
 class ExportCategoryStats(BaseModel):

@@ -117,6 +117,8 @@ async def correct_segment(
 
 # ---- 审核 (pending_review -> approved|rejected) ----
 _REVIEWABLE = {SegmentStatus.pending_review.value}
+# 退回还可作用于已通过的段(退回到 rejected 以便再改)
+_REJECTABLE = {SegmentStatus.pending_review.value, SegmentStatus.approved.value}
 
 
 @router.post("/{segment_id}/approve", response_model=SegmentRead)
@@ -149,7 +151,7 @@ async def reject_segment(
     seg = await session.get(Segment, segment_id)
     if seg is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Segment not found")
-    if seg.status not in _REVIEWABLE:
+    if seg.status not in _REJECTABLE:
         raise HTTPException(
             status.HTTP_409_CONFLICT, f"Cannot reject in status={seg.status}"
         )
@@ -160,3 +162,20 @@ async def reject_segment(
     await session.commit()
     await session.refresh(seg)
     return seg
+
+
+@router.delete("/{segment_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_segment(
+    segment_id: uuid.UUID, user: StaffOnly, session: SessionDep
+) -> None:
+    """删除单个切片(R2 clip + DB 行)。reviewer/admin 可删。"""
+    seg = await session.get(Segment, segment_id)
+    if seg is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Segment not found")
+    if seg.audio_key:
+        try:
+            await storage.delete_object(seg.audio_key)
+        except Exception:  # noqa: BLE001  R2 删除失败不阻断 DB 清理
+            pass
+    await session.delete(seg)
+    await session.commit()

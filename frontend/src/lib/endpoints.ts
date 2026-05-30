@@ -115,8 +115,15 @@ export function approveSegment(id: string): Promise<Segment> {
   return api.request<Segment>(`/segments/${id}/approve`, { method: 'POST' })
 }
 
-export function rejectSegment(id: string, rejectionReason: string): Promise<Segment> {
+export function rejectSegment(
+  id: string,
+  rejectionReason?: string,
+): Promise<Segment> {
   return api.request<Segment>(`/segments/${id}/reject`, {
-    json: { rejection_reason: rejectionReason },
+    json: { rejection_reason: rejectionReason ?? null },
   })
+}
+
+export function deleteSegment(id: string): Promise<void> {
+  return api.request<void>(`/segments/${id}`, { method: 'DELETE' })
 }
