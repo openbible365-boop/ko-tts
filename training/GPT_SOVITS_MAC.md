@@ -22,9 +22,13 @@ brew install ffmpeg cmake
 
 ## 1. 拿代码 + 建环境
 
+> ⚠️ **装在 ko-tts 之外的单独目录**(GPT-SoVITS 有几 GB,别塞进采集仓库)。
+> `ko-tts/training/` 只放我们的桥接脚本 + 这些教程。
+
 ```bash
+cd ~/Projects                 # 任意 ko-tts 之外的目录(如家目录)
 git clone https://github.com/RVC-Boss/GPT-SoVITS
-cd GPT-SoVITS
+cd GPT-SoVITS                 # 之后所有命令都在这个目录里跑
 conda create -n GPTSoVits python=3.10 -y
 conda activate GPTSoVits
 ```
