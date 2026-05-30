@@ -12,7 +12,22 @@ kr-tts.openbible.live {
 		-Server
 	}
 
-	reverse_proxy backend:8000
+	# API: 剥掉 /api 前缀转给后端(与前端 dev proxy 行为一致, 后端路由无 /api)
+	handle_path /api/* {
+		reverse_proxy backend:8000
+	}
+
+	# 健康检查直达后端(deploy.sh 外部 curl /health 用)
+	handle /health {
+		reverse_proxy backend:8000
+	}
+
+	# 其余一律服务前端 SPA; 客户端路由(/upload、/review…)回退 index.html
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
 
 	log {
 		output stdout
