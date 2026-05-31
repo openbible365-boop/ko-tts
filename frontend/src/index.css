@@ -916,7 +916,7 @@ button:disabled {
 }
 .coll .file-meta {
   min-width: 0;
-  max-width: 150px;
+  max-width: 120px;
 }
 .coll .fname {
   font-weight: 700;
@@ -1027,7 +1027,7 @@ button:disabled {
 }
 .coll .prog {
   margin-top: 9px;
-  width: 100px;
+  width: 80px;
   max-width: 100%;
 }
 .coll .prog-track {
