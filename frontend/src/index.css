@@ -1509,6 +1509,21 @@ button:disabled {
   margin-top: 14px;
   text-align: center;
 }
+.upload .field .req {
+  color: #dc2626;
+  margin-left: 2px;
+  margin-right: 6px;
+  font-weight: 700;
+}
+.upload .field-error {
+  color: #dc2626;
+  font-size: 12px;
+  margin-top: 6px;
+}
+.upload .control.invalid {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.12);
+}
 
 @media (max-width: 680px) {
   .upload {

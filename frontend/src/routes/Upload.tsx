@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { DragEvent, FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
@@ -46,6 +46,8 @@ export function Upload() {
   const [language, setLanguage] = useState<Language>(DEFAULT_LANGUAGE)
   const [title, setTitle] = useState('')
   const [speaker, setSpeaker] = useState('')
+  const [speakerError, setSpeakerError] = useState(false)
+  const speakerRef = useRef<HTMLInputElement>(null)
   const [removeMusic, setRemoveMusic] = useState(false)
   const [file, setFile] = useState<File | null>(null)
   const [dragOver, setDragOver] = useState(false)
@@ -62,6 +64,7 @@ export function Upload() {
     setLanguage(DEFAULT_LANGUAGE)
     setTitle('')
     setSpeaker('')
+    setSpeakerError(false)
     setRemoveMusic(false)
     setFile(null)
     setError(null)
@@ -80,6 +83,12 @@ export function Upload() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (!file || busy) return
+    // 声音昵称为必填: 为空则阻止上传, 聚焦并提示
+    if (!speaker.trim()) {
+      setSpeakerError(true)
+      speakerRef.current?.focus()
+      return
+    }
     setError(null)
     try {
       setPhase('creating')
@@ -89,7 +98,7 @@ export function Upload() {
         original_filename: file.name,
         mime_type: file.type || null,
         title: title.trim() || null,
-        speaker: speaker.trim() || null,
+        speaker: speaker.trim(),
         remove_music: removeMusic,
       })
 
@@ -174,17 +183,22 @@ export function Upload() {
           </div>
           <div className="field">
             <label>
-              声音昵称{' '}
+              声音昵称 <span className="req">*</span>
               <span className="opt">训练按它分组,同一个声音请填一致</span>
             </label>
             <input
-              className="control"
+              ref={speakerRef}
+              className={`control ${speakerError ? 'invalid' : ''}`}
               type="text"
               value={speaker}
-              onChange={(e) => setSpeaker(e.target.value)}
+              onChange={(e) => {
+                setSpeaker(e.target.value)
+                if (speakerError) setSpeakerError(false)
+              }}
               placeholder="例如:평양남성1"
               disabled={busy}
             />
+            {speakerError && <div className="field-error">请填写声音昵称</div>}
           </div>
         </div>
 
