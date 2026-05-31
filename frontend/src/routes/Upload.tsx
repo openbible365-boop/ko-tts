@@ -46,7 +46,6 @@ export function Upload() {
   const [language, setLanguage] = useState<Language>(DEFAULT_LANGUAGE)
   const [title, setTitle] = useState('')
   const [speaker, setSpeaker] = useState('')
-  const [notes, setNotes] = useState('')
   const [removeMusic, setRemoveMusic] = useState(false)
   const [file, setFile] = useState<File | null>(null)
   const [dragOver, setDragOver] = useState(false)
@@ -63,7 +62,6 @@ export function Upload() {
     setLanguage(DEFAULT_LANGUAGE)
     setTitle('')
     setSpeaker('')
-    setNotes('')
     setRemoveMusic(false)
     setFile(null)
     setError(null)
@@ -92,7 +90,6 @@ export function Upload() {
         mime_type: file.type || null,
         title: title.trim() || null,
         speaker: speaker.trim() || null,
-        notes: notes.trim() || null,
         remove_music: removeMusic,
       })
 
@@ -171,35 +168,22 @@ export function Upload() {
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="例如:2026 春季主日讲道"
+              placeholder="例如:约翰福音1"
               disabled={busy}
             />
           </div>
           <div className="field">
-            <label>声音 / 说话人</label>
+            <label>声音昵称</label>
             <input
               className="control"
               type="text"
               value={speaker}
               onChange={(e) => setSpeaker(e.target.value)}
-              placeholder="例如:남성1 / 여성1 / 朗读者名字"
+              placeholder="例如:평양남성1"
               disabled={busy}
             />
             <div className="hint">训练按它分组,同一个声音请填一致</div>
           </div>
-        </div>
-
-        <div className="field full">
-          <label>
-            备注 <span className="opt">(可选)</span>
-          </label>
-          <textarea
-            className="control"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="补充说明,例如录制环境、章节范围等"
-            disabled={busy}
-          />
         </div>
 
         {/* 消除背景音乐: 开关 */}
