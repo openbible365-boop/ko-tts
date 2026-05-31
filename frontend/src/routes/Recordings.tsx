@@ -62,6 +62,17 @@ function fmtDate(iso: string): string {
   return new Date(iso).toLocaleString()
 }
 
+function fmtDuration(ms: number | null): string {
+  if (ms == null) return '—'
+  const total = Math.round(ms / 1000)
+  const h = Math.floor(total / 3600)
+  const m = Math.floor((total % 3600) / 60)
+  const s = total % 60
+  const mm = String(m).padStart(2, '0')
+  const ss = String(s).padStart(2, '0')
+  return h > 0 ? `${h}:${mm}:${ss}` : `${m}:${ss}`
+}
+
 function recLabel(r: Recording): string {
   return r.title || r.original_filename || r.id.slice(0, 8)
 }
@@ -343,9 +354,16 @@ export function Recordings() {
                       <div className="file-ico">
                         <WaveIcon />
                       </div>
-                      <div>
-                        <div className="fname">{recLabel(r)}</div>
-                        <div className="fmeta">{r.original_filename || '—'}</div>
+                      <div className="file-meta">
+                        <div className="fname" title={recLabel(r)}>
+                          {recLabel(r)}
+                        </div>
+                        <div
+                          className="fmeta"
+                          title={r.original_filename || undefined}
+                        >
+                          {r.original_filename || '—'}
+                        </div>
                       </div>
                     </div>
                   </td>
@@ -381,7 +399,10 @@ export function Recordings() {
                     <StatusCell rec={r} />
                   </td>
                   <td>
-                    <span className="size">{fmtSize(r.file_size_bytes)}</span>
+                    <div className="size-cell">
+                      <span className="size">{fmtSize(r.file_size_bytes)}</span>
+                      <span className="size-dur">{fmtDuration(r.duration_ms)}</span>
+                    </div>
                   </td>
                   <td>
                     <span className="date">{fmtDate(r.created_at)}</span>

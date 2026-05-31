@@ -914,16 +914,26 @@ button:disabled {
   width: 18px;
   height: 18px;
 }
+.coll .file-meta {
+  min-width: 0;
+  max-width: 340px;
+}
 .coll .fname {
   font-weight: 700;
   font-size: 14.5px;
   color: #171b26;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .coll .fmeta {
   font-size: 12px;
   color: var(--c-muted);
   margin-top: 3px;
   font-family: 'Space Grotesk', var(--sans);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .coll .uploader {
   display: flex;
@@ -1051,11 +1061,23 @@ button:disabled {
   font-family: 'Space Grotesk', var(--sans);
   letter-spacing: 0.5px;
 }
+.coll .size-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
 .coll .size {
   font-family: 'Space Grotesk', var(--sans);
   font-weight: 500;
   font-size: 13.5px;
   color: #39404f;
+  white-space: nowrap;
+}
+.coll .size-dur {
+  font-family: 'Space Grotesk', var(--sans);
+  font-size: 12px;
+  color: var(--c-muted);
+  white-space: nowrap;
 }
 .coll .date {
   font-size: 13px;
