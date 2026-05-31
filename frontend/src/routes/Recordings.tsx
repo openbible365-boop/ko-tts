@@ -341,7 +341,7 @@ export function Recordings() {
               <th>状态</th>
               <th>大小</th>
               <th>创建时间</th>
-              <th style={{ textAlign: 'right' }}>操作</th>
+              <th style={{ textAlign: 'center' }}>操作</th>
             </tr>
           </thead>
           <tbody>
