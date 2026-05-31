@@ -7,13 +7,21 @@ import {
   createRecording,
   uploadFileToR2,
 } from '../lib/endpoints'
-import type { ContentCategory } from '../lib/types'
+import type { ContentCategory, Language } from '../lib/types'
 
 const CATEGORIES: { value: ContentCategory; label: string }[] = [
-  { value: 'sermon', label: '讲道' },
-  { value: 'bible_reading', label: '圣经朗读' },
-  { value: 'hymn', label: '赞美诗' },
+  { value: 'sermon', label: '播音' },
+  { value: 'bible_reading', label: '演讲' },
+  { value: 'hymn', label: '朗诵' },
 ]
+
+const LANGUAGES: { value: Language; label: string }[] = [
+  { value: 'en', label: '英语' },
+  { value: 'zh', label: '普通话' },
+  { value: 'ko', label: '朝鲜语' },
+]
+
+const DEFAULT_LANGUAGE: Language = 'ko'
 
 // 建行 → 直传 R2 → complete 三步; 用 phase 驱动按钮与进度提示。
 type Phase = 'idle' | 'creating' | 'uploading' | 'finalizing' | 'error'
@@ -35,6 +43,7 @@ export function Upload() {
   const queryClient = useQueryClient()
 
   const [category, setCategory] = useState<ContentCategory>('sermon')
+  const [language, setLanguage] = useState<Language>(DEFAULT_LANGUAGE)
   const [title, setTitle] = useState('')
   const [speaker, setSpeaker] = useState('')
   const [notes, setNotes] = useState('')
@@ -51,6 +60,7 @@ export function Upload() {
   function reset() {
     if (busy) return
     setCategory('sermon')
+    setLanguage(DEFAULT_LANGUAGE)
     setTitle('')
     setSpeaker('')
     setNotes('')
@@ -77,6 +87,7 @@ export function Upload() {
       setPhase('creating')
       const { recording, upload_url } = await createRecording({
         content_category: category,
+        language,
         original_filename: file.name,
         mime_type: file.type || null,
         title: title.trim() || null,
@@ -125,6 +136,24 @@ export function Upload() {
                 onClick={() => setCategory(c.value)}
               >
                 {c.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 语种: 药丸单选; 切片转文字按所选语种 */}
+        <div className="field full">
+          <label>语种</label>
+          <div className="pills">
+            {LANGUAGES.map((l) => (
+              <button
+                key={l.value}
+                type="button"
+                className={`pill ${language === l.value ? 'on' : ''}`}
+                disabled={busy}
+                onClick={() => setLanguage(l.value)}
+              >
+                {l.label}
               </button>
             ))}
           </div>

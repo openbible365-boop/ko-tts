@@ -51,6 +51,7 @@ async def create_recording(
         original_filename=data.original_filename,
         mime_type=data.mime_type,
         content_category=data.content_category.value,
+        language=data.language.value,
         title=data.title,
         notes=data.notes,
         remove_music=data.remove_music,

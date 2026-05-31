@@ -51,18 +51,32 @@ def test_user_update_bad_role():
 
 # ---- RecordingCreate ----
 def test_recording_create_ok():
-    r = RecordingCreate(content_category="sermon", original_filename="x.mp3")
+    r = RecordingCreate(
+        content_category="sermon", language="ko", original_filename="x.mp3"
+    )
     assert r.content_category.value == "sermon"
+    assert r.language.value == "ko"
 
 
 def test_recording_create_bad_category():
     with pytest.raises(ValidationError):
-        RecordingCreate(content_category="podcast", original_filename="x.mp3")
+        RecordingCreate(
+            content_category="podcast", language="ko", original_filename="x.mp3"
+        )
+
+
+def test_recording_create_bad_language():
+    with pytest.raises(ValidationError):
+        RecordingCreate(
+            content_category="sermon", language="jp", original_filename="x.mp3"
+        )
 
 
 def test_recording_create_empty_filename():
     with pytest.raises(ValidationError):
-        RecordingCreate(content_category="sermon", original_filename="")
+        RecordingCreate(
+            content_category="sermon", language="ko", original_filename=""
+        )
 
 
 # ---- SegmentCorrect / SegmentReject ----

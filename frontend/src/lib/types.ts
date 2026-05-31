@@ -4,6 +4,9 @@ export type UserRole = 'admin' | 'reviewer' | 'contributor'
 
 export type ContentCategory = 'sermon' | 'bible_reading' | 'hymn'
 
+// 转写语种(基础语言码), 须与后端 app/models.py 的 Language 一致。
+export type Language = 'en' | 'zh' | 'ko'
+
 export type RecordingStatus =
   | 'pending_upload'
   | 'uploaded'
@@ -37,6 +40,7 @@ export interface Recording {
   channels: number | null
   codec: string | null
   content_category: ContentCategory
+  language: Language
   title: string | null
   notes: string | null
   remove_music: boolean
@@ -51,6 +55,7 @@ export interface Recording {
 
 export interface RecordingCreate {
   content_category: ContentCategory
+  language: Language
   original_filename: string
   mime_type?: string | null
   title?: string | null

@@ -3,7 +3,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
-from app.models import ContentCategory, UserRole
+from app.models import ContentCategory, Language, UserRole
 
 
 class UserCreate(BaseModel):
@@ -41,6 +41,7 @@ class UserUpdate(BaseModel):
 
 class RecordingCreate(BaseModel):
     content_category: ContentCategory
+    language: Language
     original_filename: str = Field(min_length=1, max_length=512)
     mime_type: str | None = Field(default=None, max_length=128)
     title: str | None = Field(default=None, max_length=512)
@@ -63,6 +64,7 @@ class RecordingRead(BaseModel):
     channels: int | None
     codec: str | None
     content_category: str
+    language: str
     title: str | None
     notes: str | None
     remove_music: bool

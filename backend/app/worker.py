@@ -151,6 +151,9 @@ async def _process_segment(seg_id: uuid.UUID) -> None:
     async with SessionLocal() as s:
         seg = await s.get(Segment, seg_id)
         audio_key = seg.audio_key
+        # 按录音自身语种转写, 而非全局默认; 兜底回退在 asr.transcribe 内。
+        rec = await s.get(Recording, seg.recording_id)
+        language = rec.language if rec else None
 
     if not audio_key:
         raise RuntimeError(f"segment {seg_id} has no audio_key")
@@ -160,7 +163,7 @@ async def _process_segment(seg_id: uuid.UUID) -> None:
         path = os.path.join(tmp, "clip.wav")
         with open(path, "wb") as f:
             f.write(data)
-        text = await asr.transcribe(path)
+        text = await asr.transcribe(path, language=language)
 
     async with SessionLocal() as s, s.begin():
         seg = await s.get(Segment, seg_id)

@@ -7,12 +7,23 @@ import {
   getRecordingProgress,
   listRecordings,
 } from '../lib/endpoints'
-import type { ContentCategory, Recording, RecordingStatus } from '../lib/types'
+import type {
+  ContentCategory,
+  Language,
+  Recording,
+  RecordingStatus,
+} from '../lib/types'
 
 const CATEGORY_LABEL: Record<ContentCategory, string> = {
-  sermon: '讲道',
-  bible_reading: '圣经朗读',
-  hymn: '赞美诗',
+  sermon: '播音',
+  bible_reading: '演讲',
+  hymn: '朗诵',
+}
+
+const LANGUAGE_LABEL: Record<Language, string> = {
+  en: '英语',
+  zh: '普通话',
+  ko: '朝鲜语',
 }
 
 // 仍在流转中的状态 —— 列表自动轮询直到全部落定。
@@ -337,6 +348,7 @@ export function Recordings() {
               <th>标题 / 文件名</th>
               {isStaff && <th>上传者</th>}
               <th>类别</th>
+              <th>语种</th>
               <th>声音</th>
               <th>状态</th>
               <th>大小</th>
@@ -383,6 +395,11 @@ export function Recordings() {
                   <td>
                     <span className="tag">
                       {CATEGORY_LABEL[r.content_category]}
+                    </span>
+                  </td>
+                  <td>
+                    <span className="tag">
+                      {LANGUAGE_LABEL[r.language] ?? r.language}
                     </span>
                   </td>
                   <td>
@@ -436,7 +453,7 @@ export function Recordings() {
             })}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={isStaff ? 8 : 7}>
+                <td colSpan={isStaff ? 9 : 8}>
                   <div className="coll-empty">
                     {all.length === 0
                       ? '还没有采集，点右上角「上传」开始。'

@@ -33,6 +33,14 @@ class ContentCategory(enum.StrEnum):
     hymn = "hymn"
 
 
+# 转写语种(基础语言码): Whisper 在识别层面只认基础语言, 无法区分地区变体
+# (英式/美式、普通话/台湾国语、韩国语/朝鲜语), 故只存这三种, 直接作为 ASR 语言码。
+class Language(enum.StrEnum):
+    en = "en"  # 英语
+    zh = "zh"  # 普通话/中文
+    ko = "ko"  # 朝鲜语/韩语
+
+
 class RecordingStatus(enum.StrEnum):
     pending_upload = "pending_upload"  # 行已建、预签名 URL 已发, 文件尚未确认入 R2
     uploaded = "uploaded"
@@ -88,6 +96,10 @@ class Recording(TimestampMixin, Base):
     channels: Mapped[int | None] = mapped_column(Integer)
     codec: Mapped[str | None] = mapped_column(String(32))
     content_category: Mapped[str] = mapped_column(String(32), nullable=False)
+    # 转写语种(en/zh/ko); 存量录音为韩语, server_default=ko
+    language: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="ko", index=True
+    )
     title: Mapped[str | None] = mapped_column(String(512))
     notes: Mapped[str | None] = mapped_column(Text)
     # 声音/说话人标注(自由文本, 如 "남성1"/"여성1"/名字), 训练侧按它分组出男/女声

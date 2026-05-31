@@ -46,7 +46,7 @@ async def test_create_recording_bad_category_422(
     r = await client.post(
         "/recordings",
         headers=_auth(make_token(contributor)),
-        json={"content_category": "podcast", "original_filename": "x.mp3"},
+        json={"content_category": "podcast", "language": "ko", "original_filename": "x.mp3"},
     )
     assert r.status_code == 422
 
