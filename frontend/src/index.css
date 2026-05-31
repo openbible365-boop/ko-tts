@@ -916,7 +916,7 @@ button:disabled {
 }
 .coll .file-meta {
   min-width: 0;
-  max-width: 340px;
+  max-width: 150px;
 }
 .coll .fname {
   font-weight: 700;
