@@ -19,7 +19,8 @@ router = APIRouter(prefix="/segments", tags=["segments"])
 
 DOWNLOAD_TTL = 3600
 
-# 校对/审核要求 reviewer 或 admin
+# 审核/删除要求 reviewer 或 admin; 校对放开给 contributor(但限本人录音, 见
+# correct_segment 里的 _load_with_access)。
 StaffOnly = Annotated[User, Depends(require_role(UserRole.reviewer, UserRole.admin))]
 
 
@@ -96,12 +97,12 @@ _CORRECTABLE = {
 async def correct_segment(
     segment_id: uuid.UUID,
     data: SegmentCorrect,
-    user: StaffOnly,
+    user: CurrentUser,
     session: SessionDep,
 ) -> Segment:
-    seg = await session.get(Segment, segment_id)
-    if seg is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Segment not found")
+    # 校对放开给 contributor, 但 _load_with_access 保证 contributor 只能改
+    # 自己上传录音的切片(reviewer/admin 不受限)。审核/导出仍是 StaffOnly。
+    seg = await _load_with_access(segment_id, user, session)
     if seg.status not in _CORRECTABLE:
         raise HTTPException(
             status.HTTP_409_CONFLICT, f"Cannot correct in status={seg.status}"

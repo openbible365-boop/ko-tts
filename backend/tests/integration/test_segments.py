@@ -102,12 +102,36 @@ async def test_correct_happy(
     assert body["corrected_at"] is not None
 
 
-async def test_correct_contributor_forbidden(
+async def test_correct_contributor_own_ok(
     client: AsyncClient, contributor, make_token,
     make_recording_factory, make_segment_factory,
 ):
+    """contributor 可校对自己上传录音的切片(corrected_by 记其本人)。"""
     rec = await make_recording_factory(contributor)
-    seg = await make_segment_factory(rec, status=SegmentStatus.pending_correction)
+    seg = await make_segment_factory(
+        rec, status=SegmentStatus.pending_correction, asr_text="raw"
+    )
+    r = await client.post(
+        f"/segments/{seg.id}/correct",
+        headers=_auth(make_token(contributor)),
+        json={"text": "fixed by me"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["status"] == "pending_review"
+    assert body["text"] == "fixed by me"
+    assert body["corrected_by"] == str(contributor.id)
+
+
+async def test_correct_other_contributor_forbidden(
+    client: AsyncClient, contributor, make_token, admin,
+    make_recording_factory, make_segment_factory,
+):
+    """contributor 不能校对别人上传录音的切片 -> 403。"""
+    other_rec = await make_recording_factory(admin)  # admin 作为 uploader
+    seg = await make_segment_factory(
+        other_rec, status=SegmentStatus.pending_correction
+    )
     r = await client.post(
         f"/segments/{seg.id}/correct",
         headers=_auth(make_token(contributor)),

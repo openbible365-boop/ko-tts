@@ -100,11 +100,24 @@ async def list_recordings(
     session: SessionDep,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
-) -> list[Recording]:
-    stmt = select(Recording).order_by(Recording.created_at.desc()).limit(limit).offset(offset)
+) -> list[RecordingRead]:
+    # join User 把上传者邮箱/昵称带出来, 供 staff 在「全部采集」里分辨归属。
+    stmt = (
+        select(Recording, User.email, User.display_name)
+        .join(User, Recording.uploaded_by == User.id)
+        .order_by(Recording.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
     if not _is_staff(user):
         stmt = stmt.where(Recording.uploaded_by == user.id)
-    return list(await session.scalars(stmt))
+    rows = (await session.execute(stmt)).all()
+    return [
+        RecordingRead.model_validate(rec).model_copy(
+            update={"uploader_email": email, "uploader_name": name}
+        )
+        for rec, email, name in rows
+    ]
 
 
 @router.get("/{recording_id}", response_model=RecordingRead)

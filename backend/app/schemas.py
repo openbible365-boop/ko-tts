@@ -70,6 +70,9 @@ class RecordingRead(BaseModel):
     status: str
     created_at: datetime
     updated_at: datetime
+    # 上传者信息: 仅 list_recordings 对 staff 填充(便于审核时分辨归属), 其余场景为 None
+    uploader_email: str | None = None
+    uploader_name: str | None = None
 
 
 class RecordingCreateResponse(BaseModel):

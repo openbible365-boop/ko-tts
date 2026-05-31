@@ -147,6 +147,17 @@ async def test_list_recordings_reviewer_sees_all(
     assert {str(a.id), str(b.id)} <= ids
 
 
+async def test_list_recordings_staff_sees_uploader(
+    client: AsyncClient, contributor, reviewer, make_token, make_recording_factory
+):
+    """staff 列表里每条采集带上传者邮箱(供审核分辨归属)。"""
+    rec = await make_recording_factory(contributor)
+    r = await client.get("/recordings", headers=_auth(make_token(reviewer)))
+    assert r.status_code == 200
+    row = next(x for x in r.json() if x["id"] == str(rec.id))
+    assert row["uploader_email"] == "contrib@test.example"
+
+
 async def test_download_url(
     client: AsyncClient, contributor, make_token, make_recording_factory
 ):
