@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { FormEvent } from 'react'
+import type { DragEvent, FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import {
@@ -24,6 +24,12 @@ const PHASE_LABEL: Record<Exclude<Phase, 'idle' | 'error'>, string> = {
   finalizing: '确认入库…',
 }
 
+function fmtSize(b: number): string {
+  return b > 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${(b / 1024).toFixed(0)} KB`
+}
+
+const WAVE_BARS = [6, 12, 9, 15, 8]
+
 export function Upload() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -34,12 +40,34 @@ export function Upload() {
   const [notes, setNotes] = useState('')
   const [removeMusic, setRemoveMusic] = useState(false)
   const [file, setFile] = useState<File | null>(null)
+  const [dragOver, setDragOver] = useState(false)
 
   const [phase, setPhase] = useState<Phase>('idle')
   const [progress, setProgress] = useState(0)
   const [error, setError] = useState<string | null>(null)
 
   const busy = phase === 'creating' || phase === 'uploading' || phase === 'finalizing'
+
+  function reset() {
+    if (busy) return
+    setCategory('sermon')
+    setTitle('')
+    setSpeaker('')
+    setNotes('')
+    setRemoveMusic(false)
+    setFile(null)
+    setError(null)
+    setPhase('idle')
+    setProgress(0)
+  }
+
+  function onDrop(e: DragEvent) {
+    e.preventDefault()
+    setDragOver(false)
+    if (busy) return
+    const f = e.dataTransfer.files?.[0]
+    if (f) setFile(f)
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -74,88 +102,186 @@ export function Upload() {
   }
 
   return (
-    <div>
-      <h1>上传录音</h1>
-      <form className="form-stack" onSubmit={handleSubmit}>
-        <label>
-          类别
-          <select
-            value={category}
-            onChange={(e) => setCategory(e.target.value as ContentCategory)}
-            disabled={busy}
-          >
+    <div className="upload">
+      <div className="upload-head">
+        <h1>
+          <span className="bar" />
+          上传音频
+        </h1>
+        <div className="sub">添加新的音频样本，填写信息后提交切分</div>
+      </div>
+
+      <form className="upload-card" onSubmit={handleSubmit}>
+        {/* 类别: 药丸单选 */}
+        <div className="field full">
+          <label>类别</label>
+          <div className="pills">
             {CATEGORIES.map((c) => (
-              <option key={c.value} value={c.value}>
+              <button
+                key={c.value}
+                type="button"
+                className={`pill ${category === c.value ? 'on' : ''}`}
+                disabled={busy}
+                onClick={() => setCategory(c.value)}
+              >
                 {c.label}
-              </option>
+              </button>
             ))}
-          </select>
-        </label>
+          </div>
+        </div>
 
-        <label>
-          标题(可选)
-          <input
-            type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="例如:2026 春季主日讲道"
-            disabled={busy}
-          />
-        </label>
+        <div className="grid">
+          <div className="field">
+            <label>
+              标题 <span className="opt">(可选)</span>
+            </label>
+            <input
+              className="control"
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="例如:2026 春季主日讲道"
+              disabled={busy}
+            />
+          </div>
+          <div className="field">
+            <label>声音 / 说话人</label>
+            <input
+              className="control"
+              type="text"
+              value={speaker}
+              onChange={(e) => setSpeaker(e.target.value)}
+              placeholder="例如:남성1 / 여성1 / 朗读者名字"
+              disabled={busy}
+            />
+            <div className="hint">训练按它分组,同一个声音请填一致</div>
+          </div>
+        </div>
 
-        <label>
-          声音 / 说话人(训练按它分组,同一个声音请填一致)
-          <input
-            type="text"
-            value={speaker}
-            onChange={(e) => setSpeaker(e.target.value)}
-            placeholder="例如:남성1 / 여성1 / 朗读者名字"
-            disabled={busy}
-          />
-        </label>
-
-        <label>
-          备注(可选)
+        <div className="field full">
+          <label>
+            备注 <span className="opt">(可选)</span>
+          </label>
           <textarea
+            className="control"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            rows={3}
+            placeholder="补充说明,例如录制环境、章节范围等"
             disabled={busy}
           />
-        </label>
+        </div>
 
-        <label className="checkbox-row">
-          <input
-            type="checkbox"
-            checked={removeMusic}
-            onChange={(e) => setRemoveMusic(e.target.checked)}
-            disabled={busy}
-          />
-          <span>消除背景音乐(有伴奏/音乐时勾选;切分前先分离人声,处理较慢)</span>
-        </label>
+        {/* 消除背景音乐: 开关 */}
+        <div className="toggle-row">
+          <label className="switch">
+            <input
+              type="checkbox"
+              checked={removeMusic}
+              onChange={(e) => setRemoveMusic(e.target.checked)}
+              disabled={busy}
+            />
+            <span className="slider" />
+          </label>
+          <div>
+            <div className="tt">消除背景音乐</div>
+            <div className="td">
+              有伴奏 / 音乐时勾选；切分前先分离人声，处理较慢
+            </div>
+          </div>
+        </div>
 
-        <label>
-          音频文件
-          <input
-            type="file"
-            accept="audio/*"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-            disabled={busy}
-          />
-        </label>
+        {/* 音频文件: 拖拽区 */}
+        <div className="field full">
+          <label>音频文件</label>
+          <label
+            className={`dropzone ${file ? 'has-file' : ''} ${dragOver ? 'drag' : ''}`}
+            onDragOver={(e) => {
+              e.preventDefault()
+              if (!busy) setDragOver(true)
+            }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={onDrop}
+          >
+            <input
+              type="file"
+              accept="audio/*"
+              hidden
+              disabled={busy}
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            />
+            <div className="dz-ico">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path d="M12 16V4" />
+                <path d="m7 9 5-5 5 5" />
+                <path d="M5 20h14" />
+              </svg>
+            </div>
+            <div className="dz-title">
+              <b>点击选择</b> 或拖拽音频文件到此处
+            </div>
+            <div className="dz-sub">支持 WAV / MP3 / M4A · 单文件最大 500 MB</div>
+            {file && (
+              <div className="dz-file">
+                <div className="chip">
+                  <div className="wf">
+                    {WAVE_BARS.map((h, i) => (
+                      <i key={i} style={{ height: `${h}px` }} />
+                    ))}
+                  </div>
+                  <span>{file.name}</span>
+                  <span style={{ color: '#8b93a7' }}>· {fmtSize(file.size)}</span>
+                </div>
+              </div>
+            )}
+          </label>
+        </div>
 
         {phase === 'uploading' && (
-          <div className="progress" aria-label="上传进度">
+          <div className="up-progress" aria-label="上传进度">
             <span style={{ width: `${progress}%` }} />
           </div>
         )}
+        {busy && (
+          <p className="up-status">
+            {PHASE_LABEL[phase]} {phase === 'uploading' ? `${progress}%` : ''}
+          </p>
+        )}
+        {error && <p className="up-error">{error}</p>}
 
-        {busy && <p className="status-line">{PHASE_LABEL[phase]} {phase === 'uploading' ? `${progress}%` : ''}</p>}
-        {error && <p className="error">{error}</p>}
-
-        <button type="submit" disabled={!file || busy}>
-          {busy ? '处理中…' : '上传'}
-        </button>
+        <div className="form-actions">
+          <button
+            className="btn btn-ghost"
+            type="button"
+            disabled={busy}
+            onClick={reset}
+          >
+            重置
+          </button>
+          <button className="btn btn-primary" type="submit" disabled={!file || busy}>
+            {busy ? (
+              '处理中…'
+            ) : (
+              <>
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path d="M12 19V6" />
+                  <path d="m6 11 6-6 6 6" />
+                  <path d="M5 21h14" />
+                </svg>
+                上 传
+              </>
+            )}
+          </button>
+        </div>
       </form>
     </div>
   )

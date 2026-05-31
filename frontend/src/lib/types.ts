@@ -44,6 +44,9 @@ export interface Recording {
   status: RecordingStatus
   created_at: string
   updated_at: string
+  // 仅 staff 看「全部采集」时后端填充, contributor 看自己的为 null
+  uploader_email: string | null
+  uploader_name: string | null
 }
 
 export interface RecordingCreate {

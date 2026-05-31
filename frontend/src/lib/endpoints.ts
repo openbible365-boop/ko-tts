@@ -9,6 +9,7 @@ import type {
   SegmentStatus,
   Token,
   User,
+  UserRole,
 } from './types'
 
 // --- auth ---
@@ -34,6 +35,19 @@ export function register(
 
 export function getMe(): Promise<User> {
   return api.request<User>('/auth/me')
+}
+
+// --- admin: 用户管理 (仅 admin) ---
+
+export function listUsers(): Promise<User[]> {
+  return api.request<User[]>('/admin/users')
+}
+
+export function updateUser(
+  id: string,
+  data: { role?: UserRole; is_active?: boolean },
+): Promise<User> {
+  return api.request<User>(`/admin/users/${id}`, { method: 'PATCH', json: data })
 }
 
 // --- recordings ---

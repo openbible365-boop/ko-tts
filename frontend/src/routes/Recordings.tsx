@@ -9,14 +9,6 @@ import {
 } from '../lib/endpoints'
 import type { ContentCategory, Recording, RecordingStatus } from '../lib/types'
 
-const STATUS_LABEL: Record<RecordingStatus, string> = {
-  pending_upload: '待上传',
-  uploaded: '已上传',
-  segmenting: '切分中',
-  segmented: '已切分',
-  failed: '失败',
-}
-
 const CATEGORY_LABEL: Record<ContentCategory, string> = {
   sermon: '讲道',
   bible_reading: '圣经朗读',
@@ -26,10 +18,44 @@ const CATEGORY_LABEL: Record<ContentCategory, string> = {
 // 仍在流转中的状态 —— 列表自动轮询直到全部落定。
 const TRANSIENT: RecordingStatus[] = ['pending_upload', 'uploaded', 'segmenting']
 
+// 上传者头像配色: 由名字哈希挑一个, 同一个人颜色稳定。
+const AVATAR_COLORS = [
+  '#3a64ff',
+  '#7a4ddb',
+  '#16a06a',
+  '#e07a2f',
+  '#e0568a',
+  '#2f9bbf',
+]
+
+function avatarColor(seed: string): string {
+  let h = 0
+  for (const ch of seed) h = (h * 31 + ch.charCodeAt(0)) >>> 0
+  return AVATAR_COLORS[h % AVATAR_COLORS.length]
+}
+
+function initial(s: string): string {
+  return s.trim().charAt(0).toUpperCase() || '?'
+}
+
+// 声音/说话人标注里粗略判断性别, 给圆点上色(纯展示)。
+function voiceClass(speaker: string | null): string {
+  if (!speaker) return ''
+  if (/여|女/.test(speaker)) return 'female'
+  if (/남|男/.test(speaker)) return 'male'
+  return ''
+}
+
 function fmtSize(bytes: number | null): string {
   if (bytes == null) return '—'
   const mb = bytes / 1024 / 1024
   return mb >= 1 ? `${mb.toFixed(1)} MB` : `${(bytes / 1024).toFixed(0)} KB`
+}
+
+function fmtTotalSize(bytes: number): string {
+  const gb = bytes / 1024 / 1024 / 1024
+  if (gb >= 1) return `${gb.toFixed(1)} GB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
 function fmtDate(iso: string): string {
@@ -46,8 +72,21 @@ function fmtElapsed(sec: number): string {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
-// 状态格: 处理中的录音轮询 /progress, 展示进度条 + 阶段说明 + 已用时,
-// 让「切分中」(尤其去背景音乐那 ~28 分钟)不再是个不动的字。
+const WaveIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
+    <path d="M9 18V5l12-2v13" />
+    <circle cx="6" cy="18" r="3" />
+    <circle cx="18" cy="16" r="3" />
+  </svg>
+)
+
+const CheckIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+    <path d="M20 6 9 17l-5-5" />
+  </svg>
+)
+
+// 状态格: 处理中的录音轮询 /progress, 按设计展示徽章 + 进度条 + 阶段说明。
 function StatusCell({ rec }: { rec: Recording }) {
   const maybeActive =
     rec.status === 'uploaded' ||
@@ -66,31 +105,33 @@ function StatusCell({ rec }: { rec: Recording }) {
     },
   })
 
-  const badge = (
-    <span className={`badge badge-${rec.status}`}>{STATUS_LABEL[rec.status]}</span>
-  )
+  if (rec.status === 'failed') return <span className="cbadge fail">失败</span>
+  if (rec.status === 'pending_upload')
+    return <span className="cbadge run">待上传</span>
 
-  // 待上传(等客户端传完)/ 失败: 只显示徽章
-  if (rec.status === 'pending_upload' || rec.status === 'failed') return badge
-
-  // 切分/分离阶段: 此阶段无细粒度信号, 用动画条 + 阶段 + 已用时
+  // 切分/分离阶段: 不定进度动画条 + 阶段 + 已用时
   if (rec.status === 'uploaded' || rec.status === 'segmenting') {
     const label =
       rec.status === 'uploaded'
-        ? '排队中…'
+        ? '排队中'
         : rec.remove_music
           ? '去背景音乐 + 切分中'
           : '切分中'
     return (
-      <div className="status-cell">
-        {badge}
-        <div className="progress-bar indeterminate">
-          <span />
-        </div>
-        <span className="progress-text">
-          {label}
-          {p ? ` · 已用 ${fmtElapsed(p.phase_elapsed_sec)}` : ''}
+      <div>
+        <span className="cbadge run">
+          <span className="pulse" />
+          {rec.status === 'uploaded' ? '排队中' : '切分中'}
         </span>
+        <div className="prog">
+          <div className="prog-track">
+            <div className="prog-fill" />
+          </div>
+          <div className="prog-meta">
+            {label}
+            {p ? ` · 已用 ${fmtElapsed(p.phase_elapsed_sec)}` : ''}
+          </div>
+        </div>
       </div>
     )
   }
@@ -99,32 +140,45 @@ function StatusCell({ rec }: { rec: Recording }) {
   if (p && p.segment_total > 0 && p.in_transcription > 0) {
     const pct = Math.round((p.transcribed / p.segment_total) * 100)
     return (
-      <div className="status-cell">
-        {badge}
-        <div className="progress-bar">
-          <span style={{ width: `${pct}%` }} />
-        </div>
-        <span className="progress-text">
-          转写 {p.transcribed}/{p.segment_total} 段
+      <div>
+        <span className="cbadge run">
+          <span className="pulse" />
+          转写中
         </span>
+        <div className="prog">
+          <div className="prog-track">
+            <div
+              className="prog-fill determinate"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+          <div className="prog-meta">
+            {p.transcribed}/{p.segment_total} 段
+          </div>
+        </div>
       </div>
     )
   }
 
-  // 已切分且转写完成 / 无切片: 只显示徽章
-  return badge
+  return (
+    <span className="cbadge done">
+      <CheckIcon />
+      已切分
+    </span>
+  )
 }
 
 export function Recordings() {
   const { user } = useAuth()
+  // staff(admin/reviewer)看到所有人的采集; 加「上传者」列分辨归属。
   const isStaff = user?.role === 'admin' || user?.role === 'reviewer'
   const queryClient = useQueryClient()
   const [deleteTarget, setDeleteTarget] = useState<Recording | null>(null)
+  const [query, setQuery] = useState('')
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['recordings'],
     queryFn: listRecordings,
-    // 若有录音在流转中, 每 5s 轮询一次追踪进度
     refetchInterval: (q) =>
       q.state.data?.some((r) => TRANSIENT.includes(r.status)) ? 5000 : false,
   })
@@ -137,64 +191,243 @@ export function Recordings() {
     },
   })
 
-  if (isLoading) return <p className="muted">加载中…</p>
-  if (isError) return <p className="error">{(error as Error).message}</p>
+  if (isLoading) return <div className="coll muted">加载中…</div>
+  if (isError)
+    return <div className="coll error">{(error as Error).message}</div>
 
-  if (!data || data.length === 0) {
-    return (
-      <div className="empty">
-        <p>还没有录音。</p>
-        <Link to="/upload" className="btn">
-          上传第一条
-        </Link>
-      </div>
-    )
+  const all = data ?? []
+  const stats = {
+    total: all.length,
+    segmented: all.filter((r) => r.status === 'segmented').length,
+    running: all.filter(
+      (r) => r.status === 'uploaded' || r.status === 'segmenting',
+    ).length,
+    bytes: all.reduce((sum, r) => sum + (r.file_size_bytes ?? 0), 0),
   }
 
+  const q = query.trim().toLowerCase()
+  const rows = q
+    ? all.filter((r) =>
+        `${recLabel(r)} ${r.original_filename ?? ''}`.toLowerCase().includes(q),
+      )
+    : all
+
   return (
-    <div>
-      <div className="page-head">
-        <h1>我的录音</h1>
-        <Link to="/upload" className="btn">
-          上传
-        </Link>
+    <div className="coll">
+      <div className="coll-head">
+        <div>
+          <h1>
+            <span className="bar" />
+            {isStaff ? '全部采集' : '我的采集'}
+          </h1>
+          <div className="sub">
+            {isStaff ? '管理与校对所有已采集的音频样本' : '管理与校对我的音频样本'}
+          </div>
+        </div>
+        <div className="coll-toolbar">
+          <div className="coll-search">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.9"
+            >
+              <circle cx="11" cy="11" r="7" />
+              <path d="m20 20-3.2-3.2" />
+            </svg>
+            <input
+              type="text"
+              placeholder="搜索标题 / 文件名"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </div>
+          <Link to="/upload" className="coll-upload">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path d="M12 19V6" />
+              <path d="m6 11 6-6 6 6" />
+              <path d="M5 21h14" />
+            </svg>
+            上传
+          </Link>
+        </div>
       </div>
-      <table className="table">
-        <thead>
-          <tr>
-            <th>标题 / 文件名</th>
-            <th>类别</th>
-            <th>声音</th>
-            <th>状态</th>
-            <th>大小</th>
-            <th>创建时间</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          {data.map((r) => (
-            <tr key={r.id}>
-              <td>{recLabel(r)}</td>
-              <td>{CATEGORY_LABEL[r.content_category]}</td>
-              <td>{r.speaker || <span className="muted">—</span>}</td>
-              <td>
-                <StatusCell rec={r} />
-              </td>
-              <td>{fmtSize(r.file_size_bytes)}</td>
-              <td className="muted">{fmtDate(r.created_at)}</td>
-              <td className="row-actions">
-                {isStaff && <Link to={`/review?recording=${r.id}`}>校对</Link>}
-                <button
-                  className="link-danger"
-                  onClick={() => setDeleteTarget(r)}
-                >
-                  删除
-                </button>
-              </td>
+
+      <section className="coll-stats">
+        <div className="coll-stat">
+          <div className="ico a">
+            <WaveIcon />
+          </div>
+          <div>
+            <div className="n">{stats.total}</div>
+            <div className="l">采集总数</div>
+          </div>
+        </div>
+        <div className="coll-stat">
+          <div className="ico b">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path d="M20 6 9 17l-5-5" />
+            </svg>
+          </div>
+          <div>
+            <div className="n">{stats.segmented}</div>
+            <div className="l">已切分</div>
+          </div>
+        </div>
+        <div className="coll-stat">
+          <div className="ico c">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.9"
+            >
+              <circle cx="12" cy="12" r="9" />
+              <path d="M12 7v5l3 2" />
+            </svg>
+          </div>
+          <div>
+            <div className="n">{stats.running}</div>
+            <div className="l">切分中</div>
+          </div>
+        </div>
+        <div className="coll-stat">
+          <div className="ico d">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.9"
+            >
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+          </div>
+          <div>
+            <div className="n">{fmtTotalSize(stats.bytes)}</div>
+            <div className="l">样本容量</div>
+          </div>
+        </div>
+      </section>
+
+      <section className="coll-card">
+        <table>
+          <thead>
+            <tr>
+              <th>标题 / 文件名</th>
+              {isStaff && <th>上传者</th>}
+              <th>类别</th>
+              <th>声音</th>
+              <th>状态</th>
+              <th>大小</th>
+              <th>创建时间</th>
+              <th style={{ textAlign: 'right' }}>操作</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const who = r.uploader_name || r.uploader_email || '—'
+              return (
+                <tr key={r.id}>
+                  <td>
+                    <div className="file-cell">
+                      <div className="file-ico">
+                        <WaveIcon />
+                      </div>
+                      <div>
+                        <div className="fname">{recLabel(r)}</div>
+                        <div className="fmeta">{r.original_filename || '—'}</div>
+                      </div>
+                    </div>
+                  </td>
+                  {isStaff && (
+                    <td>
+                      <div className="uploader">
+                        <span
+                          className="ua"
+                          style={{ background: avatarColor(who) }}
+                        >
+                          {initial(who)}
+                        </span>
+                        {who}
+                      </div>
+                    </td>
+                  )}
+                  <td>
+                    <span className="tag">
+                      {CATEGORY_LABEL[r.content_category]}
+                    </span>
+                  </td>
+                  <td>
+                    {r.speaker ? (
+                      <span className={`voice ${voiceClass(r.speaker)}`}>
+                        <span className="vd" />
+                        {r.speaker}
+                      </span>
+                    ) : (
+                      <span className="muted">—</span>
+                    )}
+                  </td>
+                  <td>
+                    <StatusCell rec={r} />
+                  </td>
+                  <td>
+                    <span className="size">{fmtSize(r.file_size_bytes)}</span>
+                  </td>
+                  <td>
+                    <span className="date">{fmtDate(r.created_at)}</span>
+                  </td>
+                  <td>
+                    <div className="actions">
+                      <Link className="act check" to={`/review?recording=${r.id}`}>
+                        <CheckIcon />
+                        校对
+                      </Link>
+                      <button
+                        className="act del"
+                        onClick={() => setDeleteTarget(r)}
+                      >
+                        <svg
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.9"
+                        >
+                          <path d="M3 6h18" />
+                          <path d="M8 6V4h8v2" />
+                          <path d="M19 6l-1 14H6L5 6" />
+                        </svg>
+                        删除
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              )
+            })}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={isStaff ? 8 : 7}>
+                  <div className="coll-empty">
+                    {all.length === 0
+                      ? '还没有采集，点右上角「上传」开始。'
+                      : '没有匹配的采集。'}
+                  </div>
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+        <div className="coll-foot">共 {rows.length} 条记录</div>
+      </section>
 
       {deleteTarget && (
         <div
