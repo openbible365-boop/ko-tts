@@ -173,7 +173,10 @@ export function Upload() {
             />
           </div>
           <div className="field">
-            <label>声音昵称</label>
+            <label>
+              声音昵称{' '}
+              <span className="opt">训练按它分组,同一个声音请填一致</span>
+            </label>
             <input
               className="control"
               type="text"
@@ -182,7 +185,6 @@ export function Upload() {
               placeholder="例如:평양남성1"
               disabled={busy}
             />
-            <div className="hint">训练按它分组,同一个声音请填一致</div>
           </div>
         </div>
 
