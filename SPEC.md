@@ -5,9 +5,10 @@
 
 ## 1. 项目目标
 
-收集**朝鲜语**(한국어 / Korean)基督教内容音频,用于训练 TTS 模型。
+收集**多语言**基督教内容音频,用于训练 TTS 模型。最初为朝鲜语(한국어 / Korean)单语,2026-05-31 起转向多语言。
 
-- 内容类型: 讲道 / 圣经朗读 / 赞美诗
+- 语种: 英语(en)/ 普通话(zh)/ 朝鲜语(ko) — 上传时选;切片 ASR 按所选语种转写(详见 `app/languages` 思路与 `app/models.py` 的 `Language`)。Whisper 识别层只认基础语言,故只放这三种。
+- 内容类型: 播音 / 演讲 / 朗诵(原讲道 / 圣经朗读 / 赞美诗,2026-05-31 改名;底层值 sermon/bible_reading/hymn 未变)
 - 架构: 公网部署**采集服务**(本仓库) + 本地**训练模型**(另行处理)
 - 本仓库范围: 仅采集 web 服务 + 其部署,不含训练代码
 
@@ -111,6 +112,14 @@
 - 下一步:① 真采男/女各 10–60 分钟并 approve;② Mac 上按教程跑 GPT-SoVITS;③ baseline 试听 → 迭代。
 - 待定:存量 48 段 남성1 是否重切到 32k(需保文本的专门脚本);切片采样率字段在 manifest 里现统一报 settings 值, 旧 24k 段会被标成 32k(无害, GPT-SoVITS 读 wav 头为准)。
 - 注:node 经 nvm 装 v24(本机原无 brew/node),详见下方「会咬人的隐藏知识」与 memory `project_frontend_dev_setup`。
+
+### 多语言支持上线(2026-05-31)
+- [x] **从朝鲜语单语转向多语言**:起因是上传中文音频时 worker 硬编码 `language="ko"`,Whisper 被迫把中文按韩语解码、产出以假乱真的韩文。改为**按录音自身语种转写**。
+- [x] **数据模型**:`recordings.language`(迁移 `0004`,`server_default=ko` 回填存量韩语行;`Language` StrEnum = en/zh/ko)。`RecordingCreate/Read` 带 `language`;router 建行存语种;worker `_process_segment` 读 `rec.language` 传给 `asr.transcribe`(原全局 `settings.asr_language` 降级为兜底)。
+- [x] **设计取舍(joshua 拍板)**:Whisper 识别层无法区分地区变体(英式/美式、普通话/台湾国语、韩国语/朝鲜语 等同 en/zh/ko),故上传只放**三种基础语言**(英语/普通话/朝鲜语,默认朝鲜语);**台湾国语不转繁体**(没引入 opencc)。
+- [x] **类别改名**:讲道/圣经朗读/赞美诗 → 播音/演讲/朗诵(仅前端标签 + 列表展示,底层值不变)。
+- [x] **前端**:上传页加「语种」药丸选择;采集列表加「语种」列;`types.ts` 加 `Language`。
+- [x] **已部署并线上验证**(commit `1383c7b`):`deploy.sh` 重建 backend+worker + `alembic upgrade head`(线上 `alembic current=0004`、`recordings.language` 列在);前端 dist 随 rsync 上线;`/health` 正常。存量 48 段韩语切片不受影响。
 
 ### 可选下一步(MVP 后)
 - HSTS 打开(一行 Caddyfile)

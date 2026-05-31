@@ -123,39 +123,41 @@ export function Upload() {
       </div>
 
       <form className="upload-card" onSubmit={handleSubmit}>
-        {/* 类别: 药丸单选 */}
-        <div className="field full">
-          <label>类别</label>
-          <div className="pills">
-            {CATEGORIES.map((c) => (
-              <button
-                key={c.value}
-                type="button"
-                className={`pill ${category === c.value ? 'on' : ''}`}
-                disabled={busy}
-                onClick={() => setCategory(c.value)}
-              >
-                {c.label}
-              </button>
-            ))}
+        {/* 类别 + 语种: 两列; 语种与下方「声音/说话人」左对齐 */}
+        <div className="grid">
+          <div className="field">
+            <label>类别</label>
+            <div className="pills">
+              {CATEGORIES.map((c) => (
+                <button
+                  key={c.value}
+                  type="button"
+                  className={`pill ${category === c.value ? 'on' : ''}`}
+                  disabled={busy}
+                  onClick={() => setCategory(c.value)}
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
 
-        {/* 语种: 药丸单选; 切片转文字按所选语种 */}
-        <div className="field full">
-          <label>语种</label>
-          <div className="pills">
-            {LANGUAGES.map((l) => (
-              <button
-                key={l.value}
-                type="button"
-                className={`pill ${language === l.value ? 'on' : ''}`}
-                disabled={busy}
-                onClick={() => setLanguage(l.value)}
-              >
-                {l.label}
-              </button>
-            ))}
+          {/* 语种: 切片转文字按所选语种 */}
+          <div className="field">
+            <label>语种</label>
+            <div className="pills">
+              {LANGUAGES.map((l) => (
+                <button
+                  key={l.value}
+                  type="button"
+                  className={`pill ${language === l.value ? 'on' : ''}`}
+                  disabled={busy}
+                  onClick={() => setLanguage(l.value)}
+                >
+                  {l.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 

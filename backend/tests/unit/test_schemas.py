@@ -89,6 +89,12 @@ def test_segment_correct_empty():
         SegmentCorrect(text="")
 
 
-def test_segment_reject_requires_reason():
+def test_segment_reject_reason_optional():
+    # 退回理由已改为可选(从 approved 直接退回时可不填)
+    assert SegmentReject().rejection_reason is None
+    assert SegmentReject(rejection_reason="").rejection_reason == ""
+
+
+def test_segment_reject_reason_too_long():
     with pytest.raises(ValidationError):
-        SegmentReject(rejection_reason="")
+        SegmentReject(rejection_reason="x" * 1001)
