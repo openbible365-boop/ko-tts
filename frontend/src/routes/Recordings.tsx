@@ -199,6 +199,50 @@ function PlayButton({ recId }: { recId: string }) {
   )
 }
 
+const DownloadIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
+    <path d="M12 3v12" />
+    <path d="m7 10 5 5 5-5" />
+    <path d="M5 21h14" />
+  </svg>
+)
+
+// 下载原始音频到本地, 保留原文件名。
+// 用 fetch+blob 触发下载(预签名 URL 跨域, 裸 <a download> 不保证用文件名)。
+function DownloadButton({ rec }: { rec: Recording }) {
+  const [busy, setBusy] = useState(false)
+
+  async function download() {
+    if (busy) return
+    setBusy(true)
+    try {
+      const { url } = await getRecordingAudioUrl(rec.id)
+      const res = await fetch(url)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const blob = await res.blob()
+      const href = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = href
+      a.download = rec.original_filename || `${recLabel(rec)}.audio`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(href)
+    } catch {
+      // 静默失败即可; 重试再点一次
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <button className="act dl" onClick={download} disabled={busy}>
+      {busy ? <SpinIcon /> : <DownloadIcon />}
+      下载
+    </button>
+  )
+}
+
 // 状态格: 处理中的录音轮询 /progress, 按设计展示徽章 + 进度条 + 阶段说明。
 function StatusCell({ rec }: { rec: Recording }) {
   const maybeActive =
@@ -514,6 +558,7 @@ export function Recordings() {
                         <CheckIcon />
                         校对
                       </Link>
+                      <DownloadButton rec={r} />
                       <button
                         className="act del"
                         onClick={() => setDeleteTarget(r)}

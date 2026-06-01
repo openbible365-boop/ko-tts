@@ -1152,6 +1152,20 @@ button:disabled {
   text-decoration: none;
   filter: none;
 }
+.coll .act.dl {
+  color: #4a5160;
+}
+.coll .act.dl:hover {
+  background: #f3f5fa;
+  filter: none;
+}
+.coll .act.dl:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.coll .act.dl .spin {
+  animation: coll-spin 0.7s linear infinite;
+}
 .coll .act.del {
   color: #e15b5b;
 }
