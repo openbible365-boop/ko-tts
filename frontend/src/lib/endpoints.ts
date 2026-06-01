@@ -78,6 +78,11 @@ export function getRecordingProgress(id: string): Promise<RecordingProgress> {
   return api.request<RecordingProgress>(`/recordings/${id}/progress`)
 }
 
+// 预签名 GET 原始录音(用于列表里直接播放)
+export function getRecordingAudioUrl(id: string): Promise<PresignedUrl> {
+  return api.request<PresignedUrl>(`/recordings/${id}/download-url`)
+}
+
 // 浏览器直传 R2 —— PUT 到预签名 URL(绝对地址, 不经 /api 代理)。
 // 用 XHR 而非 fetch 是为了拿上传进度。预签名 URL 未签 Content-Type,
 // 所以带上 file.type 不会破坏签名(只有 host 被签名)。

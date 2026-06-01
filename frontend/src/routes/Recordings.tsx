@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import {
   deleteRecording,
+  getRecordingAudioUrl,
   getRecordingProgress,
   listRecordings,
 } from '../lib/endpoints'
@@ -107,6 +108,96 @@ const CheckIcon = () => (
     <path d="M20 6 9 17l-5-5" />
   </svg>
 )
+
+const PlayIcon = () => (
+  <svg viewBox="0 0 24 24" fill="currentColor">
+    <path d="M8 5.5v13l11-6.5z" />
+  </svg>
+)
+
+const PauseIcon = () => (
+  <svg viewBox="0 0 24 24" fill="currentColor">
+    <rect x="6.5" y="5" width="3.5" height="14" rx="1" />
+    <rect x="14" y="5" width="3.5" height="14" rx="1" />
+  </svg>
+)
+
+const SpinIcon = () => (
+  <svg className="spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+    <path d="M12 3a9 9 0 1 0 9 9" strokeLinecap="round" />
+  </svg>
+)
+
+// 列表里的播放按钮: 点一下懒取预签名 URL 播放, 再点暂停。
+// 同一时刻只放一个 —— 用模块级单例 <audio>, 切换录音自动停掉上一个。
+let sharedAudio: HTMLAudioElement | null = null
+
+function PlayButton({ recId }: { recId: string }) {
+  const [state, setState] = useState<'idle' | 'loading' | 'playing'>('idle')
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+
+  useEffect(() => {
+    // 卸载时若正放本录音, 停掉
+    return () => {
+      const a = audioRef.current
+      if (a && sharedAudio === a) {
+        a.pause()
+        sharedAudio = null
+      }
+    }
+  }, [])
+
+  async function toggle() {
+    const cur = audioRef.current
+    if (state === 'playing' && cur) {
+      cur.pause()
+      return
+    }
+    if (cur && cur.paused && cur.src) {
+      // 已加载过, 直接续播
+      stopOthers(cur)
+      void cur.play()
+      return
+    }
+    setState('loading')
+    try {
+      const { url } = await getRecordingAudioUrl(recId)
+      const a = new Audio(url)
+      audioRef.current = a
+      a.onplay = () => setState('playing')
+      a.onpause = () => setState('idle')
+      a.onended = () => setState('idle')
+      a.onerror = () => setState('idle')
+      stopOthers(a)
+      await a.play()
+    } catch {
+      setState('idle')
+    }
+  }
+
+  function stopOthers(a: HTMLAudioElement) {
+    if (sharedAudio && sharedAudio !== a) sharedAudio.pause()
+    sharedAudio = a
+  }
+
+  return (
+    <button
+      type="button"
+      className={`file-ico play ${state === 'playing' ? 'on' : ''}`}
+      onClick={toggle}
+      aria-label={state === 'playing' ? '暂停' : '播放'}
+      title={state === 'playing' ? '暂停' : '播放'}
+    >
+      {state === 'loading' ? (
+        <SpinIcon />
+      ) : state === 'playing' ? (
+        <PauseIcon />
+      ) : (
+        <PlayIcon />
+      )}
+    </button>
+  )
+}
 
 // 状态格: 处理中的录音轮询 /progress, 按设计展示徽章 + 进度条 + 阶段说明。
 function StatusCell({ rec }: { rec: Recording }) {
@@ -363,9 +454,7 @@ export function Recordings() {
                 <tr key={r.id}>
                   <td>
                     <div className="file-cell">
-                      <div className="file-ico">
-                        <WaveIcon />
-                      </div>
+                      <PlayButton recId={r.id} />
                       <div className="file-meta">
                         <div className="fname" title={recLabel(r)}>
                           {recLabel(r)}

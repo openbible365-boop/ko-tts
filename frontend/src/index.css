@@ -908,6 +908,28 @@ button:disabled {
   width: 18px;
   height: 18px;
 }
+.coll .file-ico.play {
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  transition: 0.15s;
+}
+.coll .file-ico.play:hover {
+  background: linear-gradient(140deg, #e2e9ff, #d3ddff);
+  color: #1f43d6;
+}
+.coll .file-ico.play.on {
+  background: linear-gradient(140deg, var(--c-accent), #5b8cff);
+  color: #fff;
+}
+.coll .file-ico .spin {
+  animation: coll-spin 0.7s linear infinite;
+}
+@keyframes coll-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 .coll .file-meta {
   min-width: 0;
   max-width: 120px;
