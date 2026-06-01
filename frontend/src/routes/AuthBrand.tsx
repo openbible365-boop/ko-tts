@@ -76,8 +76,6 @@ export function AuthBrand() {
       <div className="auth-core">
         <div className="auth-kicker">Audio Sampling Platform</div>
         <h1>
-          OB
-          <br />
           <em>音频采样系统</em>
         </h1>
         <p>
