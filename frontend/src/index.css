@@ -2479,7 +2479,8 @@ button:disabled {
   z-index: 2;
 }
 .ezra-lockup {
-  width: 100%;
+  width: 238px;
+  max-width: 100%;
   height: auto;
   display: block;
 }
