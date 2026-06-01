@@ -2480,26 +2480,10 @@ button:disabled {
   position: relative;
   z-index: 2;
 }
-.auth-logo {
-  width: 40px;
-  height: 40px;
-  border-radius: 11px;
-  background: linear-gradient(140deg, var(--la-accent), var(--la-accent-2));
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: 'Space Grotesk', var(--sans);
-  font-weight: 700;
-  font-size: 18px;
-  letter-spacing: 0.5px;
-  box-shadow: 0 8px 24px -6px rgba(47, 91, 255, 0.7);
-}
-.auth-wordmark {
-  font-family: 'Space Grotesk', var(--sans);
-  font-weight: 500;
-  letter-spacing: 3px;
-  font-size: 13px;
-  color: #aeb8d4;
+.ezra-lockup {
+  height: 44px;
+  width: auto;
+  display: block;
 }
 .auth-core {
   position: relative;
