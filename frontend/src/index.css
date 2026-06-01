@@ -555,19 +555,10 @@ button:disabled {
   gap: 11px;
   margin-right: 46px;
 }
-.appnav .logo {
-  width: 34px;
-  height: 34px;
-  border-radius: 9px;
-  background: linear-gradient(140deg, #2f5bff, #5b8cff);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: 'Space Grotesk', var(--sans);
-  font-weight: 700;
-  font-size: 15px;
-  color: #fff;
-  box-shadow: 0 6px 18px -5px rgba(47, 91, 255, 0.75);
+.appnav .ezra-mark {
+  height: 46px;
+  width: auto;
+  display: block;
 }
 .appnav .brand-name {
   font-weight: 700;
