@@ -2508,6 +2508,9 @@ button:disabled {
   font-style: normal;
   color: var(--la-accent-2);
 }
+.auth-core h1 em .hl {
+  color: #fff;
+}
 .auth-core p {
   margin-top: 14px;
   color: #9aa4bf;

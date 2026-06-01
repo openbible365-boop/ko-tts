@@ -76,7 +76,9 @@ export function AuthBrand() {
       <div className="auth-core">
         <div className="auth-kicker">Audio Sampling Platform</div>
         <h1>
-          <em>音频采样系统</em>
+          <em>
+            音频<span className="hl">采样</span>系统
+          </em>
         </h1>
         <p>
           专业级音频采集、标注与样本管理平台。高保真采样、实时波形监测，让每一段声音都精准入库。
