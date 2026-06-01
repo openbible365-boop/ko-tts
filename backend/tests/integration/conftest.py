@@ -48,11 +48,13 @@ async def make_recording(
     status: RecordingStatus = RecordingStatus.pending_upload,
     category: str = "sermon",
     audio_key: str | None = None,
+    remove_music: bool = False,
 ) -> Recording:
     rec = Recording(
         uploaded_by=user.id,
         audio_key=audio_key or f"recordings/{uuid.uuid4()}/original.wav",
         content_category=category,
+        remove_music=remove_music,
         status=status.value,
     )
     db_session.add(rec)

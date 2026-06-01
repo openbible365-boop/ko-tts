@@ -1031,6 +1031,35 @@ button:disabled {
   background: #fdecec;
   color: #e15b5b;
 }
+.coll .cbadge.ready {
+  background: #eaf0ff;
+  color: #2f5bff;
+}
+.coll .status-ready {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.coll .seg-btn {
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: none;
+  color: #fff;
+  background: linear-gradient(140deg, var(--c-accent), #5b8cff);
+  transition: 0.15s;
+}
+.coll .seg-btn:hover {
+  filter: brightness(1.05);
+}
+.coll .seg-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
 .coll .cbadge svg {
   width: 12px;
   height: 12px;

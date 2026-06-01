@@ -40,6 +40,10 @@ def recording_key(recording_id: uuid.UUID | str, ext: str = "") -> str:
     return f"recordings/{recording_id}/original{ext}"
 
 
+def processed_key(recording_id: uuid.UUID | str) -> str:
+    return f"recordings/{recording_id}/vocals.wav"
+
+
 def segment_key(segment_id: uuid.UUID | str) -> str:
     return f"segments/{segment_id}.wav"
 

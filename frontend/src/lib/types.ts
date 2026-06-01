@@ -9,7 +9,10 @@ export type Language = 'en' | 'zh' | 'ko'
 
 export type RecordingStatus =
   | 'pending_upload'
+  | 'pending_separation'
+  | 'separating'
   | 'uploaded'
+  | 'pending_segmentation'
   | 'segmenting'
   | 'segmented'
   | 'failed'

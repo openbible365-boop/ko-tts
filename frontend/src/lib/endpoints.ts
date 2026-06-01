@@ -83,6 +83,11 @@ export function getRecordingAudioUrl(id: string): Promise<PresignedUrl> {
   return api.request<PresignedUrl>(`/recordings/${id}/download-url`)
 }
 
+// 手动「开始切分」: 把就绪录音置为 pending_segmentation, worker 领取后切分
+export function startSegmentation(id: string): Promise<Recording> {
+  return api.request<Recording>(`/recordings/${id}/segment`, { method: 'POST' })
+}
+
 // 浏览器直传 R2 —— PUT 到预签名 URL(绝对地址, 不经 /api 代理)。
 // 用 XHR 而非 fetch 是为了拿上传进度。预签名 URL 未签 Content-Type,
 // 所以带上 file.type 不会破坏签名(只有 host 被签名)。

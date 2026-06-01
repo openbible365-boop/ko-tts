@@ -65,6 +65,19 @@ async def test_complete_recording_happy(
     assert body["file_size_bytes"] == 1234
 
 
+async def test_complete_recording_remove_music_pending_separation(
+    client: AsyncClient, contributor, make_token,
+    make_recording_factory, mock_head_object,
+):
+    # 勾了去背景音乐: complete 后进 pending_separation, 等 worker 自动分离。
+    rec = await make_recording_factory(contributor, remove_music=True)
+    r = await client.post(
+        f"/recordings/{rec.id}/complete", headers=_auth(make_token(contributor))
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "pending_separation"
+
+
 async def test_complete_recording_file_missing_400(
     client: AsyncClient, contributor, make_token,
     make_recording_factory, mock_head_object_missing,
@@ -171,15 +184,16 @@ async def test_download_url(
     assert body["expires_in"] == 3600
 
 
-async def test_trigger_segmentation_resets_to_uploaded(
+async def test_trigger_segmentation_sets_pending(
     client: AsyncClient, contributor, make_token, make_recording_factory
 ):
-    rec = await make_recording_factory(contributor, status=RecordingStatus.segmented)
+    # 「开始切分」把就绪/已切分录音置为 pending_segmentation, 等 worker 领取。
+    rec = await make_recording_factory(contributor, status=RecordingStatus.uploaded)
     r = await client.post(
         f"/recordings/{rec.id}/segment", headers=_auth(make_token(contributor))
     )
     assert r.status_code == 200
-    assert r.json()["status"] == "uploaded"
+    assert r.json()["status"] == "pending_segmentation"
 
 
 async def test_trigger_segmentation_409_if_in_progress(

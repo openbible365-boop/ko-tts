@@ -43,8 +43,11 @@ class Language(enum.StrEnum):
 
 class RecordingStatus(enum.StrEnum):
     pending_upload = "pending_upload"  # 行已建、预签名 URL 已发, 文件尚未确认入 R2
-    uploaded = "uploaded"
-    segmenting = "segmenting"
+    pending_separation = "pending_separation"  # 勾了去音乐: 等 worker 做人声分离
+    separating = "separating"  # worker 正在去背景音乐(人声分离)
+    uploaded = "uploaded"  # 已上传/就绪: 等用户手动「开始切分」
+    pending_segmentation = "pending_segmentation"  # 用户已点开始切分, 等 worker 领取
+    segmenting = "segmenting"  # worker 正在切分
     segmented = "segmented"
     failed = "failed"
 
@@ -87,6 +90,8 @@ class Recording(TimestampMixin, Base):
         ForeignKey("users.id", ondelete="RESTRICT"), index=True, nullable=False
     )
     audio_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    # 去背景音乐后的人声 wav 的 R2 键(分离完成后回填); 切分时若有则用它而非原文件
+    processed_audio_key: Mapped[str | None] = mapped_column(String(512))
     original_filename: Mapped[str | None] = mapped_column(String(512))
     mime_type: Mapped[str | None] = mapped_column(String(128))
     file_size_bytes: Mapped[int | None] = mapped_column(BigInteger)

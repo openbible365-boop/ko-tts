@@ -89,7 +89,12 @@ async def complete_upload(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Upload not found in storage")
 
     rec.file_size_bytes = head["ContentLength"]
-    rec.status = RecordingStatus.uploaded.value
+    # 勾了去背景音乐 -> 先排队做人声分离(自动); 否则直接就绪等用户手动「开始切分」。
+    rec.status = (
+        RecordingStatus.pending_separation.value
+        if rec.remove_music
+        else RecordingStatus.uploaded.value
+    )
     await session.commit()
     await session.refresh(rec)
     return rec
@@ -208,7 +213,8 @@ async def download_url(
     return PresignedUrlResponse(url=url, expires_in=UPLOAD_URL_TTL)
 
 
-# 切分由 worker 异步处理: 把录音置回 uploaded, worker 轮询领取后(重新)切分
+# 「开始切分」: 用户手动触发。只能从就绪态(uploaded, 已去过音乐)或重切(segmented/
+# failed)发起; worker 轮询领取 pending_segmentation 后切分。
 _SEGMENTABLE = {
     RecordingStatus.uploaded.value,
     RecordingStatus.segmented.value,
@@ -229,7 +235,7 @@ async def trigger_segmentation(
         raise HTTPException(
             status.HTTP_409_CONFLICT, f"Cannot segment in status={rec.status}"
         )
-    rec.status = RecordingStatus.uploaded.value
+    rec.status = RecordingStatus.pending_segmentation.value
     await session.commit()
     await session.refresh(rec)
     return rec

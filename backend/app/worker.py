@@ -25,12 +25,53 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s [worke
 log = logging.getLogger("worker")
 
 
-# ---------- 录音切分 ----------
+# ---------- 阶段一: 人声分离(仅 remove_music) ----------
+async def _claim_separation() -> uuid.UUID | None:
+    async with SessionLocal() as s, s.begin():
+        rec = await s.scalar(
+            select(Recording)
+            .where(Recording.status == RecordingStatus.pending_separation.value)
+            .order_by(Recording.created_at)
+            .with_for_update(skip_locked=True)
+            .limit(1)
+        )
+        if rec is None:
+            return None
+        rec.status = RecordingStatus.separating.value
+        return rec.id
+
+
+async def _process_separation(rec_id: uuid.UUID) -> None:
+    """去背景音乐: 分离人声, 存回 R2, 录音转 uploaded(就绪, 等用户手动开始切分)。"""
+    async with SessionLocal() as s:
+        rec = await s.get(Recording, rec_id)
+        audio_key = rec.audio_key
+
+    data = await storage.get_bytes(audio_key)
+    with tempfile.TemporaryDirectory() as tmp:
+        src = os.path.join(tmp, "input")
+        with open(src, "wb") as f:
+            f.write(data)
+        log.info("rec %s: removing background music (vocal separation)…", rec_id)
+        vocals = await separation.separate_vocals(src, os.path.join(tmp, "sep"))
+        with open(vocals, "rb") as f:
+            vocal_bytes = f.read()
+
+    key = storage.processed_key(rec_id)
+    await storage.put_bytes(key, vocal_bytes, content_type="audio/wav")
+
+    async with SessionLocal() as s, s.begin():
+        rec = await s.get(Recording, rec_id)
+        rec.processed_audio_key = key
+        rec.status = RecordingStatus.uploaded.value
+
+
+# ---------- 阶段二: 录音切分(用户手动触发后) ----------
 async def _claim_recording() -> uuid.UUID | None:
     async with SessionLocal() as s, s.begin():
         rec = await s.scalar(
             select(Recording)
-            .where(Recording.status == RecordingStatus.uploaded.value)
+            .where(Recording.status == RecordingStatus.pending_segmentation.value)
             .order_by(Recording.created_at)
             .with_for_update(skip_locked=True)
             .limit(1)
@@ -45,7 +86,7 @@ async def _process_recording(rec_id: uuid.UUID) -> None:
     async with SessionLocal() as s:
         rec = await s.get(Recording, rec_id)
         audio_key = rec.audio_key
-        remove_music = rec.remove_music
+        processed_key = rec.processed_audio_key
 
     data = await storage.get_bytes(audio_key)
 
@@ -56,12 +97,13 @@ async def _process_recording(rec_id: uuid.UUID) -> None:
 
         meta = await segmentation.probe(src)
 
-        # 元数据(时长/采样率/声道/编码)取原始文件; 但切分与切片用的音频源
-        # 在开了 remove_music 时换成"剥掉音乐后的人声"(分离不改变时长)。
+        # 元数据取原始文件; 但切分与切片用的音频源: 若已做过人声分离(processed_key
+        # 有值), 用存好的人声 wav(分离不改变时长), 否则用原文件。
         seg_src = src
-        if remove_music:
-            log.info("rec %s: removing background music (vocal separation)…", rec_id)
-            seg_src = await separation.separate_vocals(src, os.path.join(tmp, "sep"))
+        if processed_key:
+            seg_src = os.path.join(tmp, "vocals.wav")
+            with open(seg_src, "wb") as f:
+                f.write(await storage.get_bytes(processed_key))
 
         silences = await segmentation.detect_silences(
             seg_src, settings.seg_silence_noise_db, settings.seg_min_silence_sec
@@ -190,16 +232,31 @@ async def _reap_stale(timeout_min: int) -> tuple[int, int]:
     """
     cutoff = dt.datetime.now(dt.UTC) - dt.timedelta(minutes=timeout_min)
     async with SessionLocal() as s, s.begin():
-        r_res = await s.execute(
+        # 卡死的 segmenting 退回 pending_segmentation(重新排队切分);
+        # 卡死的 separating 退回 pending_separation(重新排队去音乐)。
+        seg_res = await s.execute(
             update(Recording)
             .where(
                 Recording.status == RecordingStatus.segmenting.value,
                 Recording.updated_at < cutoff,
             )
-            .values(status=RecordingStatus.uploaded.value, updated_at=func.now())
+            .values(
+                status=RecordingStatus.pending_segmentation.value, updated_at=func.now()
+            )
             .returning(Recording.id)
         )
-        r_count = len(r_res.scalars().all())
+        sep_res = await s.execute(
+            update(Recording)
+            .where(
+                Recording.status == RecordingStatus.separating.value,
+                Recording.updated_at < cutoff,
+            )
+            .values(
+                status=RecordingStatus.pending_separation.value, updated_at=func.now()
+            )
+            .returning(Recording.id)
+        )
+        r_count = len(seg_res.scalars().all()) + len(sep_res.scalars().all())
 
         s_res = await s.execute(
             update(Segment)
@@ -236,6 +293,20 @@ async def _try_transcribe_one() -> bool:
     except Exception as e:  # noqa: BLE001
         log.exception("ASR failed for %s: %r", seg_id, e)
         await _mark_segment_failed(seg_id)
+    return True
+
+
+async def _try_separate_one() -> bool:
+    rec_id = await _claim_separation()
+    if rec_id is None:
+        return False
+    log.info("separation claim %s", rec_id)
+    try:
+        await _process_separation(rec_id)
+        log.info("separation done %s", rec_id)
+    except Exception as e:  # noqa: BLE001
+        log.exception("separation failed for %s: %r", rec_id, e)
+        await _mark_recording_failed(rec_id)
     return True
 
 
@@ -285,6 +356,8 @@ async def run() -> None:
             if await _try_transcribe_one():
                 continue
             if await _try_segment_one():
+                continue
+            if await _try_separate_one():
                 continue
             await asyncio.sleep(settings.worker_poll_interval_sec)
         except Exception as e:  # noqa: BLE001

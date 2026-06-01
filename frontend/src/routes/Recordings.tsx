@@ -7,6 +7,7 @@ import {
   getRecordingAudioUrl,
   getRecordingProgress,
   listRecordings,
+  startSegmentation,
 } from '../lib/endpoints'
 import type {
   ContentCategory,
@@ -28,7 +29,14 @@ const LANGUAGE_LABEL: Record<Language, string> = {
 }
 
 // 仍在流转中的状态 —— 列表自动轮询直到全部落定。
-const TRANSIENT: RecordingStatus[] = ['pending_upload', 'uploaded', 'segmenting']
+// 仍在自动流转中的状态(列表轮询直到落定); uploaded 是等用户手动操作, 不轮询。
+const TRANSIENT: RecordingStatus[] = [
+  'pending_upload',
+  'pending_separation',
+  'separating',
+  'pending_segmentation',
+  'segmenting',
+]
 
 // 上传者头像配色: 由名字哈希挑一个, 同一个人颜色稳定。
 const AVATAR_COLORS = [
@@ -244,9 +252,14 @@ function DownloadButton({ rec }: { rec: Recording }) {
 }
 
 // 状态格: 处理中的录音轮询 /progress, 按设计展示徽章 + 进度条 + 阶段说明。
+// uploaded(就绪)时, 在徽章下方出现「开始切分」按钮, 点击手动触发切分。
 function StatusCell({ rec }: { rec: Recording }) {
+  const queryClient = useQueryClient()
+  // 仍在流转/可能在转写的状态需要轮询 /progress
   const maybeActive =
-    rec.status === 'uploaded' ||
+    rec.status === 'separating' ||
+    rec.status === 'pending_separation' ||
+    rec.status === 'pending_segmentation' ||
     rec.status === 'segmenting' ||
     rec.status === 'segmented'
 
@@ -262,30 +275,68 @@ function StatusCell({ rec }: { rec: Recording }) {
     },
   })
 
+  const startSeg = useMutation({
+    mutationFn: () => startSegmentation(rec.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['recordings'] })
+      queryClient.invalidateQueries({ queryKey: ['progress', rec.id] })
+    },
+  })
+
   if (rec.status === 'failed') return <span className="cbadge fail">失败</span>
   if (rec.status === 'pending_upload')
     return <span className="cbadge run">待上传</span>
 
-  // 切分/分离阶段: 不定进度动画条 + 阶段 + 已用时
-  if (rec.status === 'uploaded' || rec.status === 'segmenting') {
-    const label =
-      rec.status === 'uploaded'
-        ? '排队中'
-        : rec.remove_music
-          ? '去背景音乐 + 切分中'
-          : '切分中'
+  // 去背景音乐阶段(自动): 不定进度动画条
+  if (rec.status === 'pending_separation' || rec.status === 'separating') {
     return (
       <div>
         <span className="cbadge run">
           <span className="pulse" />
-          {rec.status === 'uploaded' ? '排队中' : '切分中'}
+          去背景音乐
         </span>
         <div className="prog">
           <div className="prog-track">
             <div className="prog-fill" />
           </div>
           <div className="prog-meta">
-            {label}
+            分离人声中{p ? ` · 已用 ${fmtElapsed(p.phase_elapsed_sec)}` : ''}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // 已上传/就绪: 显示「已上传」+「开始切分」按钮
+  if (rec.status === 'uploaded') {
+    return (
+      <div className="status-ready">
+        <span className="cbadge ready">已上传</span>
+        <button
+          className="seg-btn"
+          disabled={startSeg.isPending}
+          onClick={() => startSeg.mutate()}
+        >
+          {startSeg.isPending ? '提交中…' : '开始切分'}
+        </button>
+      </div>
+    )
+  }
+
+  // 切分阶段: 不定进度动画条 + 已用时
+  if (rec.status === 'pending_segmentation' || rec.status === 'segmenting') {
+    return (
+      <div>
+        <span className="cbadge run">
+          <span className="pulse" />
+          切分中
+        </span>
+        <div className="prog">
+          <div className="prog-track">
+            <div className="prog-fill" />
+          </div>
+          <div className="prog-meta">
+            {rec.status === 'pending_segmentation' ? '排队中' : '切分中'}
             {p ? ` · 已用 ${fmtElapsed(p.phase_elapsed_sec)}` : ''}
           </div>
         </div>
@@ -356,8 +407,13 @@ export function Recordings() {
   const stats = {
     total: all.length,
     segmented: all.filter((r) => r.status === 'segmented').length,
-    running: all.filter(
-      (r) => r.status === 'uploaded' || r.status === 'segmenting',
+    running: all.filter((r) =>
+      [
+        'pending_separation',
+        'separating',
+        'pending_segmentation',
+        'segmenting',
+      ].includes(r.status),
     ).length,
     bytes: all.reduce((sum, r) => sum + (r.file_size_bytes ?? 0), 0),
   }
