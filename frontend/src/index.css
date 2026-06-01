@@ -1101,7 +1101,7 @@ button:disabled {
   font-family: 'Space Grotesk', var(--sans);
 }
 .coll .fdate {
-  font-size: 6.5px;
+  font-size: 9.75px;
   color: var(--c-muted);
   margin-top: 3px;
   font-family: 'Space Grotesk', var(--sans);
