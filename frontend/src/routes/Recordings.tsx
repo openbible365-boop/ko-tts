@@ -438,9 +438,7 @@ export function Recordings() {
             <tr>
               <th>标题 / 文件名</th>
               {isStaff && <th>上传者</th>}
-              <th>类别</th>
-              <th>语种</th>
-              <th>声音</th>
+              <th>声音 / 语种 / 类别</th>
               <th>状态</th>
               <th>大小</th>
               <th style={{ textAlign: 'center' }}>操作</th>
@@ -482,24 +480,24 @@ export function Recordings() {
                     </td>
                   )}
                   <td>
-                    <span className="tag">
-                      {CATEGORY_LABEL[r.content_category]}
-                    </span>
-                  </td>
-                  <td>
-                    <span className="tag">
-                      {LANGUAGE_LABEL[r.language] ?? r.language}
-                    </span>
-                  </td>
-                  <td>
-                    {r.speaker ? (
-                      <span className={`voice ${voiceClass(r.speaker)}`}>
-                        <span className="vd" />
-                        {r.speaker}
+                    <div className="meta-combo">
+                      {r.speaker ? (
+                        <span className={`voice ${voiceClass(r.speaker)}`}>
+                          <span className="vd" />
+                          {r.speaker}
+                        </span>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
+                      <span className="sep">/</span>
+                      <span className="tag">
+                        {LANGUAGE_LABEL[r.language] ?? r.language}
                       </span>
-                    ) : (
-                      <span className="muted">—</span>
-                    )}
+                      <span className="sep">/</span>
+                      <span className="tag">
+                        {CATEGORY_LABEL[r.content_category]}
+                      </span>
+                    </div>
                   </td>
                   <td>
                     <StatusCell rec={r} />
@@ -539,7 +537,7 @@ export function Recordings() {
             })}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={isStaff ? 8 : 7}>
+                <td colSpan={isStaff ? 6 : 5}>
                   <div className="coll-empty">
                     {all.length === 0
                       ? '还没有采集，点右上角「上传」开始。'

@@ -978,6 +978,16 @@ button:disabled {
   border-radius: 7px;
   white-space: nowrap;
 }
+.coll .meta-combo {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.coll .meta-combo .sep {
+  color: #c2c8d6;
+  font-size: 12px;
+}
 .coll .voice {
   display: inline-flex;
   align-items: center;
