@@ -537,7 +537,7 @@ button:disabled {
 
 /* ===== 顶部导航(深色, 全局 Layout) ===== */
 .appnav {
-  height: 64px;
+  height: 84px;
   background: radial-gradient(120% 300% at 0% 0%, #16203f 0%, transparent 55%),
     linear-gradient(90deg, #0c1330 0%, #0a0f1f 100%);
   color: #fff;
@@ -556,16 +556,19 @@ button:disabled {
   margin-right: 46px;
 }
 .appnav .ezra-mark {
-  height: 46px;
+  height: 69px;
   width: auto;
   display: block;
 }
 .appnav .brand-name {
   font-weight: 700;
-  font-size: 15.5px;
+  font-size: 23px;
   letter-spacing: 0.5px;
   white-space: nowrap;
   color: #fff;
+}
+.appnav .brand-name .hl {
+  color: #e89a2c;
 }
 .appnav .brand-name small {
   color: #5b8cff;

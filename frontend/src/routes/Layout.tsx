@@ -65,7 +65,9 @@ export function Layout() {
       <header className="appnav">
         <div className="brand-mark">
           <EzraMarkReverse />
-          <div className="brand-name">音频采样</div>
+          <div className="brand-name">
+            音频<span className="hl">采样</span>
+          </div>
         </div>
         <nav className="menu">
           <NavLink to="/" end>
