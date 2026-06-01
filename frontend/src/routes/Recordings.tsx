@@ -443,7 +443,6 @@ export function Recordings() {
               <th>声音</th>
               <th>状态</th>
               <th>大小</th>
-              <th>创建时间</th>
               <th style={{ textAlign: 'center' }}>操作</th>
             </tr>
           </thead>
@@ -465,6 +464,7 @@ export function Recordings() {
                         >
                           {r.original_filename || '—'}
                         </div>
+                        <div className="fdate">{fmtDate(r.created_at)}</div>
                       </div>
                     </div>
                   </td>
@@ -511,9 +511,6 @@ export function Recordings() {
                     </div>
                   </td>
                   <td>
-                    <span className="date">{fmtDate(r.created_at)}</span>
-                  </td>
-                  <td>
                     <div className="actions">
                       <Link className="act check" to={`/review?recording=${r.id}`}>
                         <CheckIcon />
@@ -542,7 +539,7 @@ export function Recordings() {
             })}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={isStaff ? 9 : 8}>
+                <td colSpan={isStaff ? 8 : 7}>
                   <div className="coll-empty">
                     {all.length === 0
                       ? '还没有采集，点右上角「上传」开始。'

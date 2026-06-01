@@ -1100,6 +1100,13 @@ button:disabled {
   color: #6b7280;
   font-family: 'Space Grotesk', var(--sans);
 }
+.coll .fdate {
+  font-size: 6.5px;
+  color: var(--c-muted);
+  margin-top: 3px;
+  font-family: 'Space Grotesk', var(--sans);
+  white-space: nowrap;
+}
 .coll .actions {
   display: flex;
   align-items: center;
