@@ -3,7 +3,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
-from app.models import ContentCategory, Language, UserRole
+from app.models import ContentCategory, Language, ScriptStatus, UserRole
 
 
 class UserCreate(BaseModel):
@@ -138,3 +138,67 @@ class ExportStats(BaseModel):
     total_duration_ms: int
     by_status: dict[str, int]
     by_category: dict[str, ExportCategoryStats]
+
+
+# === 范文管理 (admin-only) ===
+class ScriptLineRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    line_index: int
+    text: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class ScriptRead(BaseModel):
+    """列表/概要视图: 不含逐行内容, line_count 由路由填充。"""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    created_by: uuid.UUID
+    title: str
+    language: str
+    content_category: str
+    notes: str | None
+    status: str
+    original_filename: str | None
+    created_at: datetime
+    updated_at: datetime
+    line_count: int = 0
+
+
+class ScriptDetail(ScriptRead):
+    """详情视图: 含全部行(按 line_index 升序)。"""
+
+    lines: list[ScriptLineRead] = []
+
+
+class ScriptUpdate(BaseModel):
+    """改属性 + 定稿/撤回(status)。至少传一个字段。"""
+
+    title: str | None = Field(default=None, min_length=1, max_length=512)
+    language: Language | None = None
+    content_category: ContentCategory | None = None
+    notes: str | None = None
+    status: ScriptStatus | None = None
+
+    @model_validator(mode="after")
+    def _at_least_one(self) -> "ScriptUpdate":
+        if all(
+            v is None
+            for v in (self.title, self.language, self.content_category, self.notes, self.status)
+        ):
+            raise ValueError("must provide at least one field to update")
+        return self
+
+
+class ScriptLineInput(BaseModel):
+    text: str = Field(min_length=1, max_length=10000)
+
+
+class ScriptLinesSave(BaseModel):
+    """整页保存: 前端传完整有序行数组, 后端按顺序重排 line_index (replace-all)。"""
+
+    lines: list[ScriptLineInput]

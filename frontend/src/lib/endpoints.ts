@@ -1,10 +1,15 @@
 import { api, getToken } from './api'
 import type {
+  ContentCategory,
+  Language,
   PresignedUrl,
   Recording,
   RecordingCreate,
   RecordingCreateResponse,
   RecordingProgress,
+  Script,
+  ScriptDetail,
+  ScriptStatus,
   Segment,
   SegmentStatus,
   Token,
@@ -48,6 +53,57 @@ export function updateUser(
   data: { role?: UserRole; is_active?: boolean },
 ): Promise<User> {
   return api.request<User>(`/admin/users/${id}`, { method: 'PATCH', json: data })
+}
+
+// --- 范文管理 (仅 admin) ---
+
+export function listScripts(status?: ScriptStatus): Promise<Script[]> {
+  const qs = status ? `?status=${status}` : ''
+  return api.request<Script[]>(`/scripts${qs}`)
+}
+
+export function getScript(id: string): Promise<ScriptDetail> {
+  return api.request<ScriptDetail>(`/scripts/${id}`)
+}
+
+export function uploadScript(data: {
+  file: File
+  title: string
+  language: Language
+  content_category: ContentCategory
+  notes?: string
+}): Promise<ScriptDetail> {
+  const fd = new FormData()
+  fd.append('file', data.file)
+  fd.append('title', data.title)
+  fd.append('language', data.language)
+  fd.append('content_category', data.content_category)
+  if (data.notes?.trim()) fd.append('notes', data.notes.trim())
+  return api.request<ScriptDetail>('/scripts', { formData: fd })
+}
+
+export function updateScript(
+  id: string,
+  data: {
+    title?: string
+    language?: Language
+    content_category?: ContentCategory
+    notes?: string | null
+    status?: ScriptStatus
+  },
+): Promise<ScriptDetail> {
+  return api.request<ScriptDetail>(`/scripts/${id}`, { method: 'PATCH', json: data })
+}
+
+export function saveScriptLines(id: string, lines: string[]): Promise<ScriptDetail> {
+  return api.request<ScriptDetail>(`/scripts/${id}/lines`, {
+    method: 'PUT',
+    json: { lines: lines.map((text) => ({ text })) },
+  })
+}
+
+export function deleteScript(id: string): Promise<void> {
+  return api.request<void>(`/scripts/${id}`, { method: 'DELETE' })
 }
 
 // --- recordings ---

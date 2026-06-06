@@ -2788,3 +2788,287 @@ button:disabled {
     padding: 40px 32px;
   }
 }
+
+/* --- 范文管理 (复用 umgmt 表格壳 + 自有弹窗表单) --- */
+.smgmt-title {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+.smgmt-title:hover {
+  color: var(--accent);
+  filter: none;
+  text-decoration: underline;
+}
+
+.smgmt-modal {
+  max-width: 520px;
+}
+.smgmt-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.smgmt-form .f label {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-bottom: 0.35rem;
+}
+.smgmt-form .ctl {
+  width: 100%;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-soft);
+  color: var(--text);
+  font: inherit;
+  box-sizing: border-box;
+}
+.smgmt-form textarea.ctl {
+  resize: vertical;
+  min-height: 56px;
+}
+.smgmt-form .ctl:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.smgmt-form .row2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+.smgmt-form .pills {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.smgmt-form .pill {
+  padding: 0.4rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-soft);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.85rem;
+}
+.smgmt-form .pill.on {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: transparent;
+}
+.smgmt-form .drop {
+  display: block;
+  border: 1.5px dashed var(--border);
+  border-radius: 10px;
+  padding: 1rem;
+  text-align: center;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+.smgmt-form .drop.has {
+  border-color: var(--accent);
+}
+.smgmt-form .drop .fn {
+  color: var(--text);
+  font-weight: 600;
+}
+.smgmt-form .err {
+  color: var(--error);
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+/* --- 范文详情页 --- */
+.sdetail {
+  max-width: 860px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.sdetail-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.sdetail .back {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.sdetail .back:hover {
+  color: var(--text);
+}
+.sd-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.sd-attrs {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+.sd-attrs .f.grow {
+  flex: 1 1 220px;
+}
+.sd-card .f label {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-bottom: 0.35rem;
+}
+.sd-card .ctl {
+  width: 100%;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-soft);
+  color: var(--text);
+  font: inherit;
+  box-sizing: border-box;
+}
+.sd-card textarea.ctl {
+  resize: vertical;
+}
+.sd-card .ctl:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.sd-card .pills {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.sd-card .pill {
+  padding: 0.4rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-soft);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.85rem;
+}
+.sd-card .pill.on {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: transparent;
+}
+.sd-attrs-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+.sd-card .err {
+  color: var(--error);
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.sd-lines-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.sd-lines-head h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+.sd-lines-tools {
+  display: flex;
+  gap: 0.5rem;
+}
+.sd-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.sd-line {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-soft);
+}
+.sd-line.dragging {
+  opacity: 0.5;
+  border-color: var(--accent);
+}
+.sd-line .grip {
+  cursor: grab;
+  color: var(--muted);
+  user-select: none;
+  padding: 0 0.2rem;
+}
+.sd-line .ln {
+  width: 1.8rem;
+  text-align: right;
+  color: var(--muted);
+  font-size: 0.8rem;
+  flex: none;
+}
+.sd-line .line-ta {
+  flex: 1;
+  resize: vertical;
+  min-height: 2.1rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  line-height: 1.5;
+  box-sizing: border-box;
+}
+.sd-line .line-ta:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.line-ops {
+  display: flex;
+  gap: 0.15rem;
+  flex: none;
+}
+.line-ops button {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.8rem;
+  min-width: 1.9rem;
+  height: 1.9rem;
+  padding: 0;
+}
+.line-ops button:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--muted);
+  filter: none;
+}
+.line-ops button.del:hover:not(:disabled) {
+  color: var(--error);
+  border-color: var(--error);
+}
+.sd-empty {
+  color: var(--muted);
+  text-align: center;
+  padding: 1.5rem;
+}

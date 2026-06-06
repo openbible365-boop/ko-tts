@@ -121,7 +121,17 @@
 - [x] **前端**:上传页加「语种」药丸选择;采集列表加「语种」列;`types.ts` 加 `Language`。
 - [x] **已部署并线上验证**(commit `1383c7b`):`deploy.sh` 重建 backend+worker + `alembic upgrade head`(线上 `alembic current=0004`、`recordings.language` 列在);前端 dist 随 rsync 上线;`/health` 正常。存量 48 段韩语切片不受影响。
 
+### 范文管理上线(2026-06-06)
+- [x] **新功能(joshua 提出)**:admin 上传 Word(.docx)范文 → 系统按段落拆成「行/切分」→ admin 编辑 → 定稿。这是与现有「音频→文本」相反的**文本先行**流水线:范文行将来供采集员逐行朗读录音(录音环节是下一阶段,本次未做)。
+- [x] **数据模型**(迁移 `0006`):新表 `scripts`(title/language/content_category/notes/status/source_docx_key/created_by) + `script_lines`(script_id/line_index/text,唯一约束 `(script_id,line_index)`)。复用 `Language`/`ContentCategory` 枚举;新 `ScriptStatus` = draft/finalized。**不动现有表**。
+- [x] **拆分规则(joshua 拍板)**:python-docx 按段落拆、跳空行、trim;**不做朗读时长校验**。原始 .docx 存 R2(`scripts/{id}/source.docx`)备查。
+- [x] **定稿语义(joshua 拍板)**:`finalized` = 标记「可供采集员录音」,但**仍可编辑**(不锁定);`draft` 采集员看不到。语种/类别**整篇统一**。
+- [x] **后端**:`app/docx_parse.py`(纯函数 + 单测)、`app/routers/scripts.py`(全 admin-only:上传解析/列表/详情/改属性+定稿/整页存行/删除)。整页保存用 **replace-all**(删旧行按数组重排;⚠️行 id 每次保存会变,等录音环节需要稳定 id 时再改增量)。
+- [x] **前端**:`routes/Scripts.tsx`(列表+上传弹窗)+ `routes/ScriptDetail.tsx`(逐行编辑:改/删/增/原生 HTML5 拖拽重排/▲▼移动/拆行/合行 + 整页保存 + 定稿开关)。导航「范文管理」入口仅 admin 可见;`api.ts` 加 multipart(FormData)支持。
+- [x] **测试**:docx 解析 4 个单测;`tests/integration/test_scripts.py` 17 个集成测试(本地无 docker/pg 故 skip,靠 CI postgres 跑)。
+
 ### 可选下一步(MVP 后)
+- 范文录音环节:采集员按定稿范文逐行录音(行→音频关联表;届时 `script_lines` 需稳定 id)
 - HSTS 打开(一行 Caddyfile)
 - auth 限速;自动化测试;CI
 - 导出 approved segments(给训练侧的清单/manifest;含预签名 audio_url + text + duration)

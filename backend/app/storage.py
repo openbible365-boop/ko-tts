@@ -48,6 +48,11 @@ def segment_key(segment_id: uuid.UUID | str) -> str:
     return f"segments/{segment_id}.wav"
 
 
+def script_docx_key(script_id: uuid.UUID | str) -> str:
+    """范文原始 Word 文件 (解析后正文已入库, 这份仅备查)。"""
+    return f"scripts/{script_id}/source.docx"
+
+
 # ---- 服务端直传/读取 ----
 async def put_bytes(key: str, data: bytes, content_type: str | None = None) -> None:
     extra = {"ContentType": content_type} if content_type else {}

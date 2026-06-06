@@ -46,6 +46,9 @@ interface RequestOptions {
   json?: unknown
   // 表单体(application/x-www-form-urlencoded), 用于 OAuth2 登录
   form?: Record<string, string>
+  // multipart 表单体(文件上传), 用于范文 .docx 上传。
+  // 注意: 不要手动设 Content-Type, 让浏览器带 boundary。
+  formData?: FormData
   // 是否带 Authorization 头(默认带, 有 token 时)
   auth?: boolean
 }
@@ -60,6 +63,9 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   } else if (opts.form) {
     headers['Content-Type'] = 'application/x-www-form-urlencoded'
     body = new URLSearchParams(opts.form).toString()
+  } else if (opts.formData) {
+    // 不设 Content-Type: 浏览器会自动带 multipart/form-data; boundary=...
+    body = opts.formData
   }
 
   if (opts.auth !== false) {

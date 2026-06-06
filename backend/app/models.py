@@ -62,6 +62,13 @@ class SegmentStatus(enum.StrEnum):
     rejected = "rejected"
 
 
+# 范文(供采集员朗读录音的脚本)状态。"定稿后仍可编辑"——finalized 只是
+# 标记"可供采集员录音可见", 不锁定内容; draft 则采集员看不到。
+class ScriptStatus(enum.StrEnum):
+    draft = "draft"  # 草稿: 仅管理员可见, 编辑中
+    finalized = "finalized"  # 已定稿: 供采集员录音可见 (仍可被管理员编辑)
+
+
 class TimestampMixin:
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -153,3 +160,47 @@ class Segment(TimestampMixin, Base):
     rejection_reason: Mapped[str | None] = mapped_column(Text)
 
     recording: Mapped["Recording"] = relationship(back_populates="segments")
+
+
+# === 范文管理 (admin-only): 上传 Word 范文 → 按行拆成待录脚本 → 定稿供采集 ===
+class Script(TimestampMixin, Base):
+    __tablename__ = "scripts"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    created_by: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    title: Mapped[str] = mapped_column(String(512), nullable=False)
+    # 整篇统一: 语种(en/zh/ko)、内容类别(sermon/bible_reading/hymn), 复用现有枚举
+    language: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    content_category: Mapped[str] = mapped_column(String(32), nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default=ScriptStatus.draft, index=True
+    )
+    # 原始上传的 Word 文件留一份到 R2 备查 (解析后正文已落 script_lines)
+    source_docx_key: Mapped[str | None] = mapped_column(String(512))
+    original_filename: Mapped[str | None] = mapped_column(String(512))
+
+    lines: Mapped[list["ScriptLine"]] = relationship(
+        back_populates="script",
+        cascade="all, delete-orphan",
+        order_by="ScriptLine.line_index",
+    )
+
+
+class ScriptLine(TimestampMixin, Base):
+    __tablename__ = "script_lines"
+    __table_args__ = (
+        UniqueConstraint("script_id", "line_index", name="uq_script_line_script_index"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    script_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("scripts.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    # 整篇内的行序号(从 0 连续); 整页保存时按数组顺序重排
+    line_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+
+    script: Mapped["Script"] = relationship(back_populates="lines")

@@ -115,3 +115,32 @@ export interface PresignedUrl {
   url: string
   expires_in: number
 }
+
+// --- 范文管理 (admin) ---
+export type ScriptStatus = 'draft' | 'finalized'
+
+export interface ScriptLine {
+  id: string
+  line_index: number
+  text: string
+  created_at: string
+  updated_at: string
+}
+
+export interface Script {
+  id: string
+  created_by: string
+  title: string
+  language: Language
+  content_category: ContentCategory
+  notes: string | null
+  status: ScriptStatus
+  original_filename: string | null
+  created_at: string
+  updated_at: string
+  line_count: number
+}
+
+export interface ScriptDetail extends Script {
+  lines: ScriptLine[]
+}

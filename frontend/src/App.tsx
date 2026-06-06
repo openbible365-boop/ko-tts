@@ -6,6 +6,8 @@ import { Login } from './routes/Login'
 import { Recordings } from './routes/Recordings'
 import { Register } from './routes/Register'
 import { Review } from './routes/Review'
+import { ScriptDetail } from './routes/ScriptDetail'
+import { Scripts } from './routes/Scripts'
 import { Upload } from './routes/Upload'
 import { Users } from './routes/Users'
 
@@ -31,6 +33,8 @@ function App() {
           <Route path="/review" element={<Review />} />
           <Route element={<RequireAdmin />}>
             <Route path="/users" element={<Users />} />
+            <Route path="/scripts" element={<Scripts />} />
+            <Route path="/scripts/:id" element={<ScriptDetail />} />
           </Route>
         </Route>
       </Route>
