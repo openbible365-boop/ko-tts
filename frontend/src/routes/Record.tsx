@@ -60,6 +60,25 @@ function diffExpected(expected: string, asr: string | null): { word: string; ok:
 const SILENCE_MS = 3000 // 连续静音超过 3 秒自动停止
 const SILENCE_RMS = 0.02 // 低于此 RMS 视为静音(经验阈值)
 
+// 录音音质: 关掉通话用的降噪/AGC/回声消除(它们会让声音变闷、忽大忽小),
+// 单声道 48kHz 高保真采集, Opus 256kbps。
+const AUDIO_CONSTRAINTS: MediaTrackConstraints = {
+  channelCount: 1,
+  sampleRate: 48000,
+  echoCancellation: false,
+  noiseSuppression: false,
+  autoGainControl: false,
+}
+const REC_BITRATE = 256000
+
+function pickRecorderMime(): string | undefined {
+  const cands = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/mpeg']
+  for (const c of cands) {
+    if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(c)) return c
+  }
+  return undefined
+}
+
 // ---- 录音 hook: MediaRecorder + AnalyserNode(实时波形) + 静音自动停止(VAD) ----
 function useRecorder() {
   const mr = useRef<MediaRecorder | null>(null)
@@ -84,7 +103,7 @@ function useRecorder() {
 
   // onSilenceCb: 检测到"先有说话、随后连续静音 3 秒"时调用一次(自动停止)
   async function start(onSilenceCb?: () => void) {
-    const s = await navigator.mediaDevices.getUserMedia({ audio: true })
+    const s = await navigator.mediaDevices.getUserMedia({ audio: AUDIO_CONSTRAINTS })
     stream.current = s
     const ctx = new AudioContext()
     ac.current = ctx
@@ -93,7 +112,13 @@ function useRecorder() {
     an.fftSize = 1024
     src.connect(an)
     analyser.current = an
-    const rec = new MediaRecorder(s)
+    const mime = pickRecorderMime()
+    const rec = new MediaRecorder(
+      s,
+      mime
+        ? { mimeType: mime, audioBitsPerSecond: REC_BITRATE }
+        : { audioBitsPerSecond: REC_BITRATE },
+    )
     chunks.current = []
     rec.ondataavailable = (e) => {
       if (e.data.size) chunks.current.push(e.data)
