@@ -14,7 +14,16 @@ from sqlalchemy.orm import selectinload
 from app import storage
 from app.deps import CurrentUser, SessionDep, require_role
 from app.docx_parse import DocxParseError, parse_docx_lines
-from app.models import ContentCategory, Language, Script, ScriptLine, ScriptStatus, User, UserRole
+from app.models import (
+    ContentCategory,
+    Language,
+    Recording,
+    Script,
+    ScriptLine,
+    ScriptStatus,
+    User,
+    UserRole,
+)
 from app.schemas import ScriptDetail, ScriptLinesSave, ScriptRead, ScriptUpdate
 
 router = APIRouter(prefix="/scripts", tags=["scripts"])
@@ -127,10 +136,17 @@ async def list_scripts(
 # 注意: 必须在 /{script_id} 之前声明, 否则 "recordable" 会被当作 script_id。
 @router.get("/recordable", response_model=list[ScriptRead])
 async def list_recordable_scripts(me: CurrentUser, session: SessionDep) -> list[ScriptRead]:
-    """所有登录用户: 列已定稿范文(供录音页面选择)。"""
+    """所有登录用户: 列已定稿、且当前用户尚未开始录的范文(供录音页面选择)。
+
+    已开始录的范文不在此列出 —— 续录请从「我的采集」里该样品的「继续录音」进入。
+    """
+    started = select(Recording.script_id).where(
+        Recording.uploaded_by == me.id, Recording.script_id.isnot(None)
+    )
     stmt = (
         select(Script)
         .where(Script.status == ScriptStatus.finalized.value)
+        .where(Script.id.not_in(started))
         .order_by(Script.created_at.desc())
     )
     scripts = list(await session.scalars(stmt))

@@ -218,3 +218,19 @@ async def test_recordable_lists_finalized_only(
     assert r.status_code == 200
     ids = [s["id"] for s in r.json()]
     assert ids == [str(fin.id)]
+
+
+async def test_recordable_excludes_already_started(
+    client: AsyncClient, contributor, reviewer, admin, make_token, db_session
+):
+    s1 = await _make_script(db_session, admin, ["a"])
+    s2 = await _make_script(db_session, admin, ["b"])
+    # contributor 开始录 s1 -> s1 不再出现在其可选列表
+    await _start(client, make_token(contributor), s1.id)
+    r = await client.get("/scripts/recordable", headers=_auth(make_token(contributor)))
+    ids = [s["id"] for s in r.json()]
+    assert str(s1.id) not in ids
+    assert str(s2.id) in ids
+    # 但对没开始的 reviewer, s1 仍可选(每人独立)
+    r2 = await client.get("/scripts/recordable", headers=_auth(make_token(reviewer)))
+    assert str(s1.id) in [s["id"] for s in r2.json()]
