@@ -3403,6 +3403,11 @@ button:disabled {
   min-width: 120px;
   justify-content: flex-end;
 }
+.vad-hint {
+  color: #e15b5b;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
 .st-pass {
   color: #16a06a;
   font-weight: 600;

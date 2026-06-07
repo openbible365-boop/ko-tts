@@ -56,7 +56,11 @@ function diffExpected(expected: string, asr: string | null): { word: string; ok:
   return tokens.map((word, idx) => ({ word, ok: normWord(word) === '' ? true : ok[idx] }))
 }
 
-// ---- 录音 hook: MediaRecorder + AnalyserNode(供实时波形) ----
+// 静音自动分段参数
+const SILENCE_MS = 3000 // 连续静音超过 3 秒自动停止
+const SILENCE_RMS = 0.02 // 低于此 RMS 视为静音(经验阈值)
+
+// ---- 录音 hook: MediaRecorder + AnalyserNode(实时波形) + 静音自动停止(VAD) ----
 function useRecorder() {
   const mr = useRef<MediaRecorder | null>(null)
   const chunks = useRef<Blob[]>([])
@@ -64,8 +68,12 @@ function useRecorder() {
   const ac = useRef<AudioContext | null>(null)
   const analyser = useRef<AnalyserNode | null>(null)
   const startedAt = useRef(0)
+  const vadRaf = useRef(0)
+  const onSilence = useRef<(() => void) | null>(null)
 
   function cleanup() {
+    cancelAnimationFrame(vadRaf.current)
+    onSilence.current = null
     stream.current?.getTracks().forEach((t) => t.stop())
     ac.current?.close().catch(() => {})
     mr.current = null
@@ -74,7 +82,8 @@ function useRecorder() {
     analyser.current = null
   }
 
-  async function start() {
+  // onSilenceCb: 检测到"先有说话、随后连续静音 3 秒"时调用一次(自动停止)
+  async function start(onSilenceCb?: () => void) {
     const s = await navigator.mediaDevices.getUserMedia({ audio: true })
     stream.current = s
     const ctx = new AudioContext()
@@ -90,8 +99,40 @@ function useRecorder() {
       if (e.data.size) chunks.current.push(e.data)
     }
     mr.current = rec
+    onSilence.current = onSilenceCb ?? null
     startedAt.current = performance.now()
     rec.start()
+
+    // VAD: 只在"已说过话"之后才开始计静音, 避免开头静默被立刻判停
+    let spoke = false
+    let silentSince = 0
+    const buf = new Uint8Array(an.fftSize)
+    const loop = () => {
+      vadRaf.current = requestAnimationFrame(loop)
+      const node = analyser.current
+      if (!node) return
+      node.getByteTimeDomainData(buf)
+      let sumSq = 0
+      for (const v of buf) {
+        const d = (v - 128) / 128
+        sumSq += d * d
+      }
+      const rms = Math.sqrt(sumSq / buf.length)
+      const now = performance.now()
+      if (rms > SILENCE_RMS) {
+        spoke = true
+        silentSince = 0
+      } else if (spoke) {
+        if (silentSince === 0) silentSince = now
+        else if (now - silentSince >= SILENCE_MS) {
+          const cb = onSilence.current
+          onSilence.current = null // 只触发一次
+          cancelAnimationFrame(vadRaf.current)
+          cb?.()
+        }
+      }
+    }
+    vadRaf.current = requestAnimationFrame(loop)
   }
 
   function stop(): Promise<{ blob: Blob; durationMs: number }> {
@@ -312,6 +353,7 @@ function Session({ scriptId }: { scriptId: string }) {
   const [activeSeg, setActiveSeg] = useState<string | null>(null)
   const [busySeg, setBusySeg] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const stoppingRef = useRef(false)
 
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: ['rec-segments', recId] })
@@ -319,18 +361,30 @@ function Session({ scriptId }: { scriptId: string }) {
   const passMut = useMutation({ mutationFn: passLine, onSuccess: invalidate })
   const redoMut = useMutation({ mutationFn: rerecordLine, onSuccess: invalidate })
 
+  // 录完(自动)后, 跳到下一未录行并自动开录, 实现连续朗读
+  function autoAdvance(fromSeg: Segment) {
+    const data = queryClient.getQueryData<Segment[]>(['rec-segments', recId]) ?? []
+    const next = [...data]
+      .sort((a, b) => a.segment_index - b.segment_index)
+      .find((s) => s.segment_index > fromSeg.segment_index && s.status === 'pending_recording')
+    if (next) void startRec(next)
+  }
+
   async function startRec(seg: Segment) {
     setErr(null)
     try {
       setActiveSeg(seg.id)
-      await recorder.start()
+      // 静音 3 秒自动停止 -> 走自动上传(并续录下一段)
+      await recorder.start(() => void stopAndUpload(seg, true))
     } catch (e) {
       setActiveSeg(null)
       setErr('无法访问麦克风：' + (e as Error).message)
     }
   }
 
-  async function stopAndUpload(seg: Segment) {
+  async function stopAndUpload(seg: Segment, auto = false) {
+    if (stoppingRef.current) return // 防止手动停止与静音自动停止重入
+    stoppingRef.current = true
     const { blob, durationMs } = await recorder.stop()
     setActiveSeg(null)
     setBusySeg(seg.id)
@@ -340,10 +394,12 @@ function Session({ scriptId }: { scriptId: string }) {
       await uploadFileToR2(url, file)
       await completeLineRecording(seg.id, durationMs)
       await invalidate()
+      if (auto) autoAdvance(seg) // 仅静音自动停止时续录; 手动「停止」则在此暂停
     } catch (e) {
       setErr('上传失败：' + (e as Error).message)
     } finally {
       setBusySeg(null)
+      stoppingRef.current = false
     }
   }
 
@@ -366,7 +422,7 @@ function Session({ scriptId }: { scriptId: string }) {
           {rec?.title || '录音'}
         </h1>
         <div className="sub">
-          已通过 {passed} / {rows.length} 行 · 一行一行朗读，识别不一致处会标红
+          已通过 {passed} / {rows.length} 行 · 朗读后静音 3 秒自动停止并续录下一段（也可手动「停止」暂停）
         </div>
         {rec && (
           <SpeakerBar
@@ -438,6 +494,7 @@ function Session({ scriptId }: { scriptId: string }) {
 
                 {/* 状态按钮 */}
                 <div className="rec-status">
+                  {isActive && <span className="vad-hint">静音 3 秒自动继续</span>}
                   {seg.status === 'approved' && (
                     <>
                       <span className="st-pass">✓ 通过</span>
