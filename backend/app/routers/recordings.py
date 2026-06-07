@@ -27,6 +27,7 @@ from app.schemas import (
     RecordingCreateResponse,
     RecordingProgress,
     RecordingRead,
+    RecordingSpeaker,
     SegmentRead,
 )
 
@@ -207,6 +208,22 @@ async def list_recordings(
         )
         for rec, email, name in rows
     ]
+
+
+@router.post("/{recording_id}/speaker", response_model=RecordingRead)
+async def set_recording_speaker(
+    recording_id: uuid.UUID, data: RecordingSpeaker, user: CurrentUser, session: SessionDep
+) -> Recording:
+    """设置/修改录音样品的声音昵称(训练分组用; 录音前必填)。owner 或 admin。"""
+    rec = await session.get(Recording, recording_id)
+    if rec is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Recording not found")
+    if not (rec.uploaded_by == user.id or user.role == UserRole.admin.value):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Forbidden")
+    rec.speaker = data.speaker.strip()
+    await session.commit()
+    await session.refresh(rec)
+    return rec
 
 
 @router.get("/{recording_id}", response_model=RecordingRead)

@@ -117,6 +117,11 @@ export function startRecordingFromScript(scriptId: string): Promise<Recording> {
   return api.request<Recording>(`/recordings/from-script/${scriptId}`, { method: 'POST' })
 }
 
+// 设置/修改录音样品声音昵称(录音前必填)
+export function setRecordingSpeaker(recId: string, speaker: string): Promise<Recording> {
+  return api.request<Recording>(`/recordings/${recId}/speaker`, { json: { speaker } })
+}
+
 export function getLineRecordUrl(segmentId: string): Promise<PresignedUrl> {
   return api.request<PresignedUrl>(`/segments/${segmentId}/record-url`, { method: 'POST' })
 }

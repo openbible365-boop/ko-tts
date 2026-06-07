@@ -130,6 +130,11 @@ class RecordComplete(BaseModel):
     duration_ms: int | None = Field(default=None, ge=0)
 
 
+class RecordingSpeaker(BaseModel):
+    # 录音样品的声音昵称(训练按它分组); 录音前必填
+    speaker: str = Field(min_length=1, max_length=128)
+
+
 class SegmentReject(BaseModel):
     # 从 pending_review 退回时通常带理由; 从 approved 直接退回改可不填
     rejection_reason: str | None = Field(default=None, max_length=1000)

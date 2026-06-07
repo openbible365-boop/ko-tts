@@ -9,10 +9,11 @@ import {
   listSegments,
   passLine,
   rerecordLine,
+  setRecordingSpeaker,
   startRecordingFromScript,
   uploadFileToR2,
 } from '../lib/endpoints'
-import type { ContentCategory, Language, Segment } from '../lib/types'
+import type { ContentCategory, Language, Recording, Segment } from '../lib/types'
 
 const CAT_LABEL: Record<ContentCategory, string> = {
   sermon: '播音',
@@ -237,6 +238,54 @@ function ScriptPicker() {
   )
 }
 
+// ---- 声音昵称: 录音前必填, 可修改 ----
+function SpeakerBar({ rec, onSaved }: { rec: Recording; onSaved: () => void }) {
+  const [editing, setEditing] = useState(!rec.speaker)
+  const [val, setVal] = useState(rec.speaker ?? '')
+  const mut = useMutation({
+    mutationFn: () => setRecordingSpeaker(rec.id, val.trim()),
+    onSuccess: () => {
+      setEditing(false)
+      onSaved()
+    },
+  })
+
+  if (!editing) {
+    return (
+      <div className="rec-speaker">
+        声音：<b>{rec.speaker}</b>
+        <button className="sp-edit" onClick={() => setEditing(true)}>
+          修改
+        </button>
+      </div>
+    )
+  }
+  return (
+    <div className="rec-speaker need">
+      <label>
+        声音昵称 <span className="req">*</span>
+      </label>
+      <input
+        className="sp-input"
+        value={val}
+        placeholder="例如：평양남성1"
+        onChange={(e) => setVal(e.target.value)}
+      />
+      <button
+        className="sp-save"
+        disabled={!val.trim() || mut.isPending}
+        onClick={() => mut.mutate()}
+      >
+        {mut.isPending ? '保存中…' : '保存'}
+      </button>
+      {!rec.speaker && (
+        <span className="sp-hint">训练按它分组，同一个声音请填一致；填写后才能开始录音</span>
+      )}
+      {mut.isError && <span className="sp-hint err">{(mut.error as Error).message}</span>}
+    </div>
+  )
+}
+
 // ==================== 录音会话 ====================
 function Session({ scriptId }: { scriptId: string }) {
   const queryClient = useQueryClient()
@@ -303,7 +352,8 @@ function Session({ scriptId }: { scriptId: string }) {
 
   const rows = [...(segData ?? [])].sort((a, b) => a.segment_index - b.segment_index)
   const passed = rows.filter((s) => s.status === 'approved').length
-  const recordingElsewhere = activeSeg !== null || busySeg !== null
+  const needSpeaker = !rec?.speaker // 未填声音昵称前不能录
+  const recordingElsewhere = activeSeg !== null || busySeg !== null || needSpeaker
 
   return (
     <div className="recpage">
@@ -318,8 +368,15 @@ function Session({ scriptId }: { scriptId: string }) {
         <div className="sub">
           已通过 {passed} / {rows.length} 行 · 一行一行朗读，识别不一致处会标红
         </div>
+        {rec && (
+          <SpeakerBar
+            rec={rec}
+            onSaved={() => queryClient.invalidateQueries({ queryKey: ['rec-sample', scriptId] })}
+          />
+        )}
       </div>
 
+      {needSpeaker && <p className="rec-err">请先填写「声音昵称」，填写后才能开始录音。</p>}
       {err && <p className="rec-err">{err}</p>}
 
       <ol className="rec-list">

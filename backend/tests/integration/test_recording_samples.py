@@ -182,6 +182,38 @@ async def test_rerecord_resets_line_and_sample(
     assert rec2.json()["status"] == "recording"
 
 
+# ---- 声音昵称 ----
+async def test_set_and_edit_speaker(
+    client: AsyncClient, contributor, reviewer, make_token, db_session
+):
+    script = await _make_script(db_session, contributor, ["줄"])
+    rec = (await _start(client, make_token(contributor), script.id)).json()
+    assert rec["speaker"] is None  # 新样品无声音昵称
+
+    r = await client.post(
+        f"/recordings/{rec['id']}/speaker",
+        headers=_auth(make_token(contributor)),
+        json={"speaker": "  평양남성1  "},
+    )
+    assert r.status_code == 200 and r.json()["speaker"] == "평양남성1"  # 已 trim
+
+    # 空 -> 422
+    r2 = await client.post(
+        f"/recordings/{rec['id']}/speaker",
+        headers=_auth(make_token(contributor)),
+        json={"speaker": ""},
+    )
+    assert r2.status_code == 422
+
+    # 非 owner 非 admin -> 403
+    r3 = await client.post(
+        f"/recordings/{rec['id']}/speaker",
+        headers=_auth(make_token(reviewer)),
+        json={"speaker": "x"},
+    )
+    assert r3.status_code == 403
+
+
 # ---- 访问控制 ----
 async def test_record_ops_forbidden_for_non_owner(
     client: AsyncClient, contributor, reviewer, make_token, db_session, mock_storage

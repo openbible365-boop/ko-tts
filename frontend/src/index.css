@@ -3187,6 +3187,72 @@ button:disabled {
   color: var(--error);
   margin: 0;
 }
+.rec-speaker {
+  margin-top: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  font-size: 0.9rem;
+  color: var(--text);
+}
+.rec-speaker.need {
+  background: #fff6f6;
+  border: 1px solid #f3c2c2;
+  border-radius: 8px;
+  padding: 0.6rem 0.8rem;
+}
+.rec-speaker label {
+  color: var(--muted);
+}
+.rec-speaker .req {
+  color: var(--error);
+}
+.sp-input {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  min-width: 200px;
+}
+.sp-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.sp-save {
+  padding: 0.4rem 0.8rem;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: var(--accent);
+  color: var(--accent-text);
+  cursor: pointer;
+  font: inherit;
+}
+.sp-save:disabled {
+  background: var(--bg-soft);
+  color: var(--muted);
+  border-color: var(--border);
+  cursor: not-allowed;
+}
+.sp-edit {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-decoration: underline;
+}
+.sp-hint {
+  color: var(--muted);
+  font-size: 0.82rem;
+  flex-basis: 100%;
+}
+.sp-hint.err {
+  color: var(--error);
+}
 
 .rec-pick-list {
   display: grid;
