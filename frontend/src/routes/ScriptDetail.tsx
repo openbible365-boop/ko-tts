@@ -20,6 +20,8 @@ interface LocalLine {
   text: string
 }
 
+const PAGE_SIZE = 15
+
 export function ScriptDetail() {
   const { id = '' } = useParams()
   const queryClient = useQueryClient()
@@ -40,6 +42,7 @@ export function ScriptDetail() {
   const syncedAt = useRef<string | null>(null)
   const taRefs = useRef<Record<number, HTMLTextAreaElement | null>>({})
   const [dragIndex, setDragIndex] = useState<number | null>(null)
+  const [page, setPage] = useState(0)
 
   // 服务端数据到达 / 保存后(updated_at 变化)时, 重置本地状态。
   // updated_at 不变的后台 refetch 不会清掉正在编辑的内容。
@@ -94,6 +97,12 @@ export function ScriptDetail() {
     JSON.stringify(lines.map((l) => l.text)) !== JSON.stringify(data.lines.map((l) => l.text))
   const busy = saveAttrsMut.isPending || saveLinesMut.isPending || statusMut.isPending
 
+  // --- 分页 (每页 15 行) ---
+  const pageCount = Math.max(1, Math.ceil(lines.length / PAGE_SIZE))
+  const safePage = Math.min(page, pageCount - 1)
+  const pageStart = safePage * PAGE_SIZE
+  const pageLines = lines.slice(pageStart, pageStart + PAGE_SIZE)
+
   // --- 行操作 ---
   function setLineText(i: number, text: string) {
     setLines((ls) => ls.map((l, j) => (j === i ? { ...l, text } : l)))
@@ -102,11 +111,13 @@ export function ScriptDetail() {
     setLines((ls) => ls.filter((_, j) => j !== i))
   }
   function addLine(at?: number) {
+    const insertAt = at ?? lines.length
     setLines((ls) => {
       const next = [...ls]
       next.splice(at ?? ls.length, 0, { key: keyCounter.current++, text: '' })
       return next
     })
+    setPage(Math.floor(insertAt / PAGE_SIZE)) // 跳到新行所在页
   }
   function mergeUp(i: number) {
     if (i === 0) return
@@ -139,6 +150,7 @@ export function ScriptDetail() {
       ;[next[i], next[j]] = [next[j], next[i]]
       return next
     })
+    setPage(Math.floor(j / PAGE_SIZE)) // 跨页移动时视图跟随
   }
   // 拖拽重排
   function onDragOverRow(i: number) {
@@ -259,8 +271,10 @@ export function ScriptDetail() {
         </div>
         {saveLinesMut.isError && <p className="err">{(saveLinesMut.error as Error).message}</p>}
 
-        <ol className="sd-lines">
-          {lines.map((l, i) => (
+        <ol className="sd-lines" start={pageStart + 1}>
+          {pageLines.map((l, localI) => {
+            const i = pageStart + localI
+            return (
             <li
               key={l.key}
               className={`sd-line ${dragIndex === i ? 'dragging' : ''}`}
@@ -315,8 +329,33 @@ export function ScriptDetail() {
                 </button>
               </div>
             </li>
-          ))}
+            )
+          })}
         </ol>
+
+        {pageCount > 1 && (
+          <div className="sd-pager">
+            <button disabled={safePage === 0} onClick={() => setPage(0)} title="第一页">
+              «
+            </button>
+            <button disabled={safePage === 0} onClick={() => setPage(safePage - 1)}>
+              ‹ 上一页
+            </button>
+            <span className="sd-pageinfo">
+              第 {safePage + 1} / {pageCount} 页
+            </span>
+            <button disabled={safePage >= pageCount - 1} onClick={() => setPage(safePage + 1)}>
+              下一页 ›
+            </button>
+            <button
+              disabled={safePage >= pageCount - 1}
+              onClick={() => setPage(pageCount - 1)}
+              title="最后一页"
+            >
+              »
+            </button>
+          </div>
+        )}
 
         {lines.length === 0 && (
           <div className="sd-empty">

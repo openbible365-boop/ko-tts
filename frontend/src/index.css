@@ -2890,6 +2890,7 @@ button:disabled {
 .sdetail {
   max-width: 860px;
   margin: 0 auto;
+  padding: 28px 24px 60px;
   display: flex;
   flex-direction: column;
   gap: 1rem;
@@ -3047,7 +3048,7 @@ button:disabled {
   padding: 0 0.2rem;
 }
 .sd-line .ln {
-  width: 1.8rem;
+  width: 2.4rem;
   text-align: right;
   color: var(--muted);
   font-size: 0.8rem;
@@ -3099,4 +3100,32 @@ button:disabled {
   color: var(--muted);
   text-align: center;
   padding: 1.5rem;
+}
+
+/* 行分页器 */
+.sd-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+}
+.sd-pager button {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  cursor: pointer;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.85rem;
+}
+.sd-pager button:hover:not(:disabled) {
+  border-color: var(--muted);
+  filter: none;
+}
+.sd-pageinfo {
+  color: var(--muted);
+  font-size: 0.85rem;
+  min-width: 6.5rem;
+  text-align: center;
 }
