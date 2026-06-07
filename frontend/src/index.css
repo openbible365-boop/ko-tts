@@ -2900,11 +2900,39 @@ button:disabled {
   justify-content: space-between;
 }
 .sdetail .back {
-  color: var(--muted);
-  font-size: 0.9rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.45rem 0.9rem;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 0.88rem;
+  font-weight: 600;
 }
 .sdetail .back:hover {
-  color: var(--text);
+  color: var(--accent-text);
+  filter: brightness(1.05);
+}
+/* 状态徽章: 加框 + 已定稿用蓝色背景, 与主按钮风格统一 */
+.sd-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.45rem 0.9rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+.sd-status.final {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: transparent;
+}
+.sd-status.draft {
+  background: var(--bg-soft);
+  color: var(--muted);
 }
 .sd-card {
   background: var(--bg);

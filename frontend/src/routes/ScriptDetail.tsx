@@ -160,8 +160,7 @@ export function ScriptDetail() {
         <Link to="/scripts" className="back">
           ← 返回范文列表
         </Link>
-        <span className={`ubadge ${isFinalized ? 'on' : 'off'}`}>
-          <span className="dot" />
+        <span className={`sd-status ${isFinalized ? 'final' : 'draft'}`}>
           {isFinalized ? '已定稿' : '草稿'}
         </span>
       </div>
