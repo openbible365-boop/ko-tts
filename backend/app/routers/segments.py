@@ -3,13 +3,14 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app import storage
 from app.deps import CurrentUser, SessionDep, require_role
-from app.models import Recording, Segment, SegmentStatus, User, UserRole
+from app.models import Recording, RecordingStatus, Segment, SegmentStatus, User, UserRole
 from app.schemas import (
     PresignedUrlResponse,
+    RecordComplete,
     SegmentCorrect,
     SegmentRead,
     SegmentReject,
@@ -18,6 +19,7 @@ from app.schemas import (
 router = APIRouter(prefix="/segments", tags=["segments"])
 
 DOWNLOAD_TTL = 3600
+RECORD_URL_TTL = 3600  # 录音逐行上传的预签名 PUT 有效期(秒)
 
 # 审核/删除要求 reviewer 或 admin; 校对放开给 contributor(但限本人录音, 见
 # correct_segment 里的 _load_with_access)。
@@ -180,3 +182,127 @@ async def delete_segment(
             pass
     await session.delete(seg)
     await session.commit()
+
+
+# ==================== 录音样品: 逐行录音 (owner 或 admin) ====================
+async def _load_sample_segment(
+    segment_id: uuid.UUID, user: User, session
+) -> tuple[Segment, Recording]:
+    """加载录音样品的切片 + 父录音; 校验是样品且 owner/admin 可访问。"""
+    seg = await session.get(Segment, segment_id)
+    if seg is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Segment not found")
+    rec = await session.get(Recording, seg.recording_id)
+    if rec is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Recording not found")
+    if rec.script_id is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Not a recording sample")
+    if not (rec.uploaded_by == user.id or user.role == UserRole.admin.value):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Forbidden")
+    return seg, rec
+
+
+async def _refresh_sample_status(session, rec: Recording) -> None:
+    """有未录的行 -> recording(录音中); 否则 recorded(录音完毕)。"""
+    pending = await session.scalar(
+        select(func.count())
+        .select_from(Segment)
+        .where(
+            Segment.recording_id == rec.id,
+            Segment.status == SegmentStatus.pending_recording.value,
+        )
+    )
+    rec.status = (
+        RecordingStatus.recording.value if pending else RecordingStatus.recorded.value
+    )
+
+
+@router.post("/{segment_id}/record-url", response_model=PresignedUrlResponse)
+async def record_url(
+    segment_id: uuid.UUID, user: CurrentUser, session: SessionDep
+) -> PresignedUrlResponse:
+    """发逐行录音的预签名 PUT URL; 客户端 PUT 音频后再调 record-complete。"""
+    seg, _rec = await _load_sample_segment(segment_id, user, session)
+    if seg.status == SegmentStatus.transcribing.value:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Segment is transcribing")
+    key = storage.recording_line_key(seg.id)
+    seg.audio_key = key
+    await session.commit()
+    url = await storage.presigned_put_url(key, expires_in=RECORD_URL_TTL)
+    return PresignedUrlResponse(url=url, expires_in=RECORD_URL_TTL)
+
+
+@router.post("/{segment_id}/record-complete", response_model=SegmentRead)
+async def record_complete(
+    segment_id: uuid.UUID, data: RecordComplete, user: CurrentUser, session: SessionDep
+) -> Segment:
+    """确认逐行音频已入 R2 -> 置 pending_transcription(worker 转写+比对范文)。"""
+    seg, rec = await _load_sample_segment(segment_id, user, session)
+    if not seg.audio_key:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Call record-url first")
+    head = await storage.head_object(seg.audio_key)
+    if head is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Upload not found in storage")
+    if data.duration_ms is not None:
+        seg.duration_ms = data.duration_ms
+        seg.end_ms = data.duration_ms
+    # 重置上一轮的识别/审核痕迹, 重新进入转写队列
+    seg.asr_text = None
+    seg.reviewed_by = None
+    seg.reviewed_at = None
+    seg.rejection_reason = None
+    seg.status = SegmentStatus.pending_transcription.value
+    await session.flush()
+    await _refresh_sample_status(session, rec)
+    await session.commit()
+    await session.refresh(seg)
+    return seg
+
+
+@router.post("/{segment_id}/pass", response_model=SegmentRead)
+async def pass_segment(
+    segment_id: uuid.UUID, user: CurrentUser, session: SessionDep
+) -> Segment:
+    """录音样品: 人工「通过」(从标红待判的 pending_review 强制通过)。"""
+    seg, _rec = await _load_sample_segment(segment_id, user, session)
+    if seg.status not in {
+        SegmentStatus.pending_review.value,
+        SegmentStatus.transcription_failed.value,
+    }:
+        raise HTTPException(status.HTTP_409_CONFLICT, f"Cannot pass in status={seg.status}")
+    seg.reviewed_by = user.id
+    seg.reviewed_at = datetime.now(UTC)
+    seg.rejection_reason = None
+    seg.status = SegmentStatus.approved.value
+    await session.commit()
+    await session.refresh(seg)
+    return seg
+
+
+@router.post("/{segment_id}/rerecord", response_model=SegmentRead)
+async def rerecord_segment(
+    segment_id: uuid.UUID, user: CurrentUser, session: SessionDep
+) -> Segment:
+    """录音样品: 「重录」——清掉该行音频与识别结果, 退回未录(样品退回录音中)。"""
+    seg, rec = await _load_sample_segment(segment_id, user, session)
+    if seg.status == SegmentStatus.transcribing.value:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Segment is transcribing")
+    old_key = seg.audio_key
+    seg.audio_key = None  # text(范文期望文字)保留, 只清音频与识别
+    seg.asr_text = None
+    seg.duration_ms = 0
+    seg.end_ms = 0
+    seg.reviewed_by = None
+    seg.reviewed_at = None
+    seg.rejection_reason = None
+    seg.status = SegmentStatus.pending_recording.value
+    await session.flush()
+    await _refresh_sample_status(session, rec)
+    await session.commit()
+    if old_key:
+        try:
+            await storage.delete_object(old_key)
+        except Exception:  # noqa: BLE001
+            pass
+    await session.refresh(seg)
+    return seg

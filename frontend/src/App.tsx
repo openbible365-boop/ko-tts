@@ -3,6 +3,7 @@ import { useAuth } from './auth/AuthContext'
 import { ProtectedRoute } from './auth/ProtectedRoute'
 import { Layout } from './routes/Layout'
 import { Login } from './routes/Login'
+import { Record } from './routes/Record'
 import { Recordings } from './routes/Recordings'
 import { Register } from './routes/Register'
 import { Review } from './routes/Review'
@@ -30,6 +31,7 @@ function App() {
         <Route element={<Layout />}>
           <Route path="/" element={<Recordings />} />
           <Route path="/upload" element={<Upload />} />
+          <Route path="/record" element={<Record />} />
           <Route path="/review" element={<Review />} />
           <Route element={<RequireAdmin />}>
             <Route path="/users" element={<Users />} />

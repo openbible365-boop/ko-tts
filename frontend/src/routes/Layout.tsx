@@ -74,7 +74,7 @@ export function Layout() {
             我的采集
           </NavLink>
           <NavLink to="/upload">上传</NavLink>
-          {user && <NavLink to="/review">校对</NavLink>}
+          {user && <NavLink to="/record">录音</NavLink>}
           {user?.role === 'admin' && <NavLink to="/scripts">范文管理</NavLink>}
           {user?.role === 'admin' && <NavLink to="/users">用户管理</NavLink>}
         </nav>

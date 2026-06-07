@@ -12,7 +12,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import selectinload
 
 from app import storage
-from app.deps import SessionDep, require_role
+from app.deps import CurrentUser, SessionDep, require_role
 from app.docx_parse import DocxParseError, parse_docx_lines
 from app.models import ContentCategory, Language, Script, ScriptLine, ScriptStatus, User, UserRole
 from app.schemas import ScriptDetail, ScriptLinesSave, ScriptRead, ScriptUpdate
@@ -104,6 +104,35 @@ async def list_scripts(
     stmt = select(Script).order_by(Script.created_at.desc()).limit(limit).offset(offset)
     if status_ is not None:
         stmt = stmt.where(Script.status == status_.value)
+    scripts = list(await session.scalars(stmt))
+
+    count_map: dict[uuid.UUID, int] = {}
+    ids = [s.id for s in scripts]
+    if ids:
+        rows = await session.execute(
+            select(ScriptLine.script_id, func.count())
+            .where(ScriptLine.script_id.in_(ids))
+            .group_by(ScriptLine.script_id)
+        )
+        count_map = {sid: cnt for sid, cnt in rows}
+
+    out: list[ScriptRead] = []
+    for s in scripts:
+        r = ScriptRead.model_validate(s)
+        r.line_count = count_map.get(s.id, 0)
+        out.append(r)
+    return out
+
+
+# 注意: 必须在 /{script_id} 之前声明, 否则 "recordable" 会被当作 script_id。
+@router.get("/recordable", response_model=list[ScriptRead])
+async def list_recordable_scripts(me: CurrentUser, session: SessionDep) -> list[ScriptRead]:
+    """所有登录用户: 列已定稿范文(供录音页面选择)。"""
+    stmt = (
+        select(Script)
+        .where(Script.status == ScriptStatus.finalized.value)
+        .order_by(Script.created_at.desc())
+    )
     scripts = list(await session.scalars(stmt))
 
     count_map: dict[uuid.UUID, int] = {}

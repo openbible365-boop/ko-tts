@@ -6,10 +6,21 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 
 from app import storage
 from app.deps import CurrentUser, SessionDep
-from app.models import Recording, RecordingStatus, Segment, SegmentStatus, User, UserRole
+from app.models import (
+    Recording,
+    RecordingStatus,
+    Script,
+    ScriptLine,
+    ScriptStatus,
+    Segment,
+    SegmentStatus,
+    User,
+    UserRole,
+)
 from app.schemas import (
     PresignedUrlResponse,
     RecordingCreate,
@@ -68,6 +79,78 @@ async def create_recording(
         upload_url=upload_url,
         upload_expires_in=UPLOAD_URL_TTL,
     )
+
+
+@router.post("/from-script/{script_id}", response_model=RecordingRead)
+async def start_recording_from_script(
+    script_id: uuid.UUID, user: CurrentUser, session: SessionDep
+) -> Recording:
+    """取或建当前用户对该定稿范文的录音样品(每人一份, 可续录)。
+
+    新建时按范文行预生成 segments(text=范文行快照, status=未录)。
+    """
+    script = await session.get(Script, script_id)
+    if script is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Script not found")
+    if script.status != ScriptStatus.finalized.value:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Script is not finalized")
+
+    existing = await session.scalar(
+        select(Recording).where(
+            Recording.script_id == script_id, Recording.uploaded_by == user.id
+        )
+    )
+    if existing is not None:
+        return existing  # 续录
+
+    lines = list(
+        await session.scalars(
+            select(ScriptLine)
+            .where(ScriptLine.script_id == script_id)
+            .order_by(ScriptLine.line_index)
+        )
+    )
+    if not lines:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Script has no lines")
+
+    rec = Recording(
+        uploaded_by=user.id,
+        script_id=script_id,
+        audio_key="",  # 录音样品无单一父文件, 逐行各自存
+        content_category=script.content_category,
+        language=script.language,
+        title=script.title,
+        status=RecordingStatus.recording.value,
+    )
+    session.add(rec)
+    await session.flush()
+    for ln in lines:
+        session.add(
+            Segment(
+                recording_id=rec.id,
+                segment_index=ln.line_index,
+                start_ms=0,
+                end_ms=0,
+                duration_ms=0,
+                text=ln.text,  # 期望文字(范文行快照)
+                status=SegmentStatus.pending_recording.value,
+            )
+        )
+    try:
+        await session.commit()
+    except IntegrityError:
+        # 并发下另一请求已建(唯一约束 script_id+uploaded_by), 回滚取已存在的
+        await session.rollback()
+        existing = await session.scalar(
+            select(Recording).where(
+                Recording.script_id == script_id, Recording.uploaded_by == user.id
+            )
+        )
+        if existing is None:
+            raise
+        return existing
+    await session.refresh(rec)
+    return rec
 
 
 @router.post("/{recording_id}/complete", response_model=RecordingRead)

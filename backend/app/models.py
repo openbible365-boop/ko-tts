@@ -50,15 +50,19 @@ class RecordingStatus(enum.StrEnum):
     segmenting = "segmenting"  # worker 正在切分
     segmented = "segmented"
     failed = "failed"
+    # 录音样品(基于定稿范文逐行朗读): 区别于上传音频, 无切分阶段
+    recording = "recording"  # 还有未录的行
+    recorded = "recorded"  # 所有行都已录
 
 
 class SegmentStatus(enum.StrEnum):
+    pending_recording = "pending_recording"  # 录音样品: 该行尚未录音
     pending_transcription = "pending_transcription"
     transcribing = "transcribing"  # worker 正在跑 ASR
     transcription_failed = "transcription_failed"
     pending_correction = "pending_correction"
-    pending_review = "pending_review"
-    approved = "approved"
+    pending_review = "pending_review"  # 录音样品: ASR 与范文不一致, 标红待人工(通过/重录)
+    approved = "approved"  # 录音样品: 通过(自动或人工)
     rejected = "rejected"
 
 
@@ -91,11 +95,20 @@ class User(TimestampMixin, Base):
 
 class Recording(TimestampMixin, Base):
     __tablename__ = "recordings"
+    # 录音样品: 同一范文每个采集员至多一份(可续录); 上传音频 script_id=NULL 不受约束
+    __table_args__ = (
+        UniqueConstraint("script_id", "uploaded_by", name="uq_recording_script_uploader"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     uploaded_by: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="RESTRICT"), index=True, nullable=False
     )
+    # 非空 = 录音样品(基于该定稿范文逐行录音); 空 = 普通上传音频
+    script_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("scripts.id", ondelete="SET NULL"), index=True, nullable=True
+    )
+    # 上传音频: 原始文件 R2 键。录音样品无单一父文件(逐行各自存), 置空串。
     audio_key: Mapped[str] = mapped_column(String(512), nullable=False)
     # 去背景音乐后的人声 wav 的 R2 键(分离完成后回填); 切分时若有则用它而非原文件
     processed_audio_key: Mapped[str | None] = mapped_column(String(512))

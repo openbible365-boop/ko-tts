@@ -16,6 +16,8 @@ export type RecordingStatus =
   | 'segmenting'
   | 'segmented'
   | 'failed'
+  | 'recording' // 录音样品: 还有未录的行
+  | 'recorded' // 录音样品: 所有行都已录
 
 export interface User {
   id: string
@@ -34,6 +36,8 @@ export interface Token {
 export interface Recording {
   id: string
   uploaded_by: string
+  // 非空 = 录音样品(基于该定稿范文逐行录音); 空 = 普通上传音频
+  script_id: string | null
   audio_key: string
   original_filename: string | null
   mime_type: string | null
@@ -83,6 +87,7 @@ export interface RecordingCreateResponse {
 }
 
 export type SegmentStatus =
+  | 'pending_recording' // 录音样品: 该行尚未录音
   | 'pending_transcription'
   | 'transcribing'
   | 'transcription_failed'

@@ -130,8 +130,16 @@
 - [x] **前端**:`routes/Scripts.tsx`(列表+上传弹窗)+ `routes/ScriptDetail.tsx`(逐行编辑:改/删/增/原生 HTML5 拖拽重排/▲▼移动/拆行/合行 + 整页保存 + 定稿开关)。导航「范文管理」入口仅 admin 可见;`api.ts` 加 multipart(FormData)支持。
 - [x] **测试**:docx 解析 4 个单测;`tests/integration/test_scripts.py` 17 个集成测试(本地无 docker/pg 故 skip,靠 CI postgres 跑)。
 
+### 范文录音上线(2026-06-06)
+- [x] **新功能(joshua 提出)**:采集员选一篇定稿范文 → 按行朗读录音 → ASR 识别 → 与范文"按词规整"比对, 一致自动通过, 不一致标红待人工(通过/重录)。文本先行流水线的"录音环节"。
+- [x] **复用 Recording+Segment**(迁移 `0007`):`recordings.script_id`(非空=录音样品) + 唯一约束 `(script_id, uploaded_by)`(每人一份、可续录)。新 `RecordingStatus` recording/recorded; 新 `SegmentStatus.pending_recording`。样品的 segments 按范文行预建(text=范文行**快照**, audio_key 逐行各自存)。`Recording.audio_key` 对样品置空串(无单一父文件)。
+- [x] **比对**:`app/textcompare.py` 纯函数(转小写+去标点+折叠空白+按词比, 单测)。worker `_process_segment` 加分支: 样品转写后 `is_match` → approved(自动通过) / pending_review(标红)。前端 LCS 词级 diff 标红(规则一致)。
+- [x] **接口**:`GET /scripts/recordable`(所有登录), `POST /recordings/from-script/{id}`(取/建样品+预建行), `POST /segments/{id}/record-url`+`/record-complete`(逐行预签名直传 R2→pending_transcription), `/pass`(人工通过), `/rerecord`(重录清音频回未录)。录音端点限 owner/admin。
+- [x] **前端**:导航「校对」→「录音」(校对仍从列表行进入); 「上传」右边加「录音」按钮; 列表录音样品显示"录音样品"+播第一切分+录音中/完毕。`routes/Record.tsx`: 选范文 → 逐行录音(MediaRecorder + Web Audio 实时波形 canvas + 异步流水线 + 标红 + 通过/重录)。录后用「播放+装饰波形条」(长范文逐行解码真波形会卡, 故未做)。
+- [x] **导出**:通过=approved 自动随现有数据集导出。⚠️ zip 导出把 clip 当 wav 打包, 而录音是 webm/mp4——对接训练时再转码统一(JSONL manifest 不受影响)。
+
 ### 可选下一步(MVP 后)
-- 范文录音环节:采集员按定稿范文逐行录音(行→音频关联表;届时 `script_lines` 需稳定 id)
+- 录后真·静态波形(懒加载只解码可见行); 录音 clip 转码统一为 wav(训练侧消费)
 - HSTS 打开(一行 Caddyfile)
 - auth 限速;自动化测试;CI
 - 导出 approved segments(给训练侧的清单/manifest;含预签名 audio_url + text + duration)

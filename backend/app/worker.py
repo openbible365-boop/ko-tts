@@ -16,7 +16,7 @@ import uuid
 
 from sqlalchemy import delete, func, select, update
 
-from app import asr, segmentation, separation, storage
+from app import asr, segmentation, separation, storage, textcompare
 from app.config import settings
 from app.db import SessionLocal
 from app.models import Recording, RecordingStatus, Segment, SegmentStatus
@@ -193,9 +193,11 @@ async def _process_segment(seg_id: uuid.UUID) -> None:
     async with SessionLocal() as s:
         seg = await s.get(Segment, seg_id)
         audio_key = seg.audio_key
+        expected = seg.text  # 录音样品: 范文期望文字
         # 按录音自身语种转写, 而非全局默认; 兜底回退在 asr.transcribe 内。
         rec = await s.get(Recording, seg.recording_id)
         language = rec.language if rec else None
+        is_sample = rec is not None and rec.script_id is not None
 
     if not audio_key:
         raise RuntimeError(f"segment {seg_id} has no audio_key")
@@ -210,7 +212,15 @@ async def _process_segment(seg_id: uuid.UUID) -> None:
     async with SessionLocal() as s, s.begin():
         seg = await s.get(Segment, seg_id)
         seg.asr_text = text
-        seg.status = SegmentStatus.pending_correction.value
+        if is_sample:
+            # 录音样品: 按词规整比对范文行 -> 一致自动通过, 否则标红待人工(通过/重录)
+            seg.status = (
+                SegmentStatus.approved.value
+                if textcompare.is_match(expected, text)
+                else SegmentStatus.pending_review.value
+            )
+        else:
+            seg.status = SegmentStatus.pending_correction.value
 
 
 async def _mark_segment_failed(seg_id: uuid.UUID) -> None:

@@ -106,6 +106,38 @@ export function deleteScript(id: string): Promise<void> {
   return api.request<void>(`/scripts/${id}`, { method: 'DELETE' })
 }
 
+// --- 录音 (基于定稿范文逐行录音) ---
+
+export function listRecordableScripts(): Promise<Script[]> {
+  return api.request<Script[]>('/scripts/recordable')
+}
+
+// 取或建当前用户对该范文的录音样品(每人一份, 可续录)
+export function startRecordingFromScript(scriptId: string): Promise<Recording> {
+  return api.request<Recording>(`/recordings/from-script/${scriptId}`, { method: 'POST' })
+}
+
+export function getLineRecordUrl(segmentId: string): Promise<PresignedUrl> {
+  return api.request<PresignedUrl>(`/segments/${segmentId}/record-url`, { method: 'POST' })
+}
+
+export function completeLineRecording(
+  segmentId: string,
+  durationMs?: number,
+): Promise<Segment> {
+  return api.request<Segment>(`/segments/${segmentId}/record-complete`, {
+    json: { duration_ms: durationMs ?? null },
+  })
+}
+
+export function passLine(segmentId: string): Promise<Segment> {
+  return api.request<Segment>(`/segments/${segmentId}/pass`, { method: 'POST' })
+}
+
+export function rerecordLine(segmentId: string): Promise<Segment> {
+  return api.request<Segment>(`/segments/${segmentId}/rerecord`, { method: 'POST' })
+}
+
 // --- recordings ---
 
 export function listRecordings(): Promise<Recording[]> {

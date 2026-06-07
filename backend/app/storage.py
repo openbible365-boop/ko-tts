@@ -53,6 +53,11 @@ def script_docx_key(script_id: uuid.UUID | str) -> str:
     return f"scripts/{script_id}/source.docx"
 
 
+def recording_line_key(segment_id: uuid.UUID | str) -> str:
+    """录音样品逐行 clip (浏览器 MediaRecorder, webm/mp4; ffmpeg 按内容识别, 不带扩展名)。"""
+    return f"segments/{segment_id}/clip"
+
+
 # ---- 服务端直传/读取 ----
 async def put_bytes(key: str, data: bytes, content_type: str | None = None) -> None:
     extra = {"ContentType": content_type} if content_type else {}

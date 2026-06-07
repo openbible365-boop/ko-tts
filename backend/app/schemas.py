@@ -55,6 +55,8 @@ class RecordingRead(BaseModel):
 
     id: uuid.UUID
     uploaded_by: uuid.UUID
+    # 非空 = 录音样品(基于该定稿范文逐行录音); 空 = 普通上传音频
+    script_id: uuid.UUID | None
     audio_key: str
     original_filename: str | None
     mime_type: str | None
@@ -121,6 +123,11 @@ class SegmentRead(BaseModel):
 
 class SegmentCorrect(BaseModel):
     text: str = Field(min_length=1, max_length=10000)
+
+
+class RecordComplete(BaseModel):
+    # 客户端录完上传后回传该行音频时长(毫秒), 可选
+    duration_ms: int | None = Field(default=None, ge=0)
 
 
 class SegmentReject(BaseModel):

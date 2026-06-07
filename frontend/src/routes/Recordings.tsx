@@ -6,7 +6,9 @@ import {
   deleteRecording,
   getRecordingAudioUrl,
   getRecordingProgress,
+  getSegmentAudioUrl,
   listRecordings,
+  listSegments,
   startSegmentation,
 } from '../lib/endpoints'
 import type {
@@ -140,7 +142,18 @@ const SpinIcon = () => (
 // 同一时刻只放一个 —— 用模块级单例 <audio>, 切换录音自动停掉上一个。
 let sharedAudio: HTMLAudioElement | null = null
 
-function PlayButton({ recId }: { recId: string }) {
+// 录音样品没有单一父文件: 播放第一个已录切分。
+async function resolveAudioUrl(rec: Recording): Promise<string | null> {
+  if (rec.script_id) {
+    const segs = await listSegments({ recordingId: rec.id })
+    const first = segs.find((s) => s.audio_key)
+    if (!first) return null
+    return (await getSegmentAudioUrl(first.id)).url
+  }
+  return (await getRecordingAudioUrl(rec.id)).url
+}
+
+function PlayButton({ rec }: { rec: Recording }) {
   const [state, setState] = useState<'idle' | 'loading' | 'playing'>('idle')
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
@@ -169,7 +182,11 @@ function PlayButton({ recId }: { recId: string }) {
     }
     setState('loading')
     try {
-      const { url } = await getRecordingAudioUrl(recId)
+      const url = await resolveAudioUrl(rec)
+      if (!url) {
+        setState('idle')
+        return
+      }
       const a = new Audio(url)
       audioRef.current = a
       a.onplay = () => setState('playing')
@@ -282,6 +299,21 @@ function StatusCell({ rec }: { rec: Recording }) {
       queryClient.invalidateQueries({ queryKey: ['progress', rec.id] })
     },
   })
+
+  // 录音样品: 状态来自逐行录音进度(录音中/录音完毕), 不走切分状态机
+  if (rec.script_id) {
+    return rec.status === 'recorded' ? (
+      <span className="cbadge done">
+        <CheckIcon />
+        录音完毕
+      </span>
+    ) : (
+      <span className="cbadge run">
+        <span className="pulse" />
+        录音中
+      </span>
+    )
+  }
 
   if (rec.status === 'failed') return <span className="cbadge fail">失败</span>
   if (rec.status === 'pending_upload')
@@ -468,6 +500,19 @@ export function Recordings() {
             </svg>
             上传
           </Link>
+          <Link to="/record" className="coll-upload rec">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
+              <path d="M5 11a7 7 0 0 0 14 0" />
+              <path d="M12 18v3" />
+            </svg>
+            录音
+          </Link>
         </div>
       </div>
 
@@ -551,7 +596,7 @@ export function Recordings() {
                 <tr key={r.id}>
                   <td>
                     <div className="file-cell">
-                      <PlayButton recId={r.id} />
+                      <PlayButton rec={r} />
                       <div className="file-meta">
                         <div className="fname" title={recLabel(r)}>
                           {recLabel(r)}
@@ -560,7 +605,7 @@ export function Recordings() {
                           className="fmeta"
                           title={r.original_filename || undefined}
                         >
-                          {r.original_filename || '—'}
+                          {r.script_id ? '录音样品' : r.original_filename || '—'}
                         </div>
                         <div className="fdate">{fmtDate(r.created_at)}</div>
                       </div>
@@ -610,11 +655,20 @@ export function Recordings() {
                   </td>
                   <td>
                     <div className="actions">
-                      <Link className="act check" to={`/review?recording=${r.id}`}>
-                        <CheckIcon />
-                        校对
-                      </Link>
-                      <DownloadButton rec={r} />
+                      {r.script_id ? (
+                        <Link className="act check" to={`/record?script=${r.script_id}`}>
+                          <WaveIcon />
+                          继续录音
+                        </Link>
+                      ) : (
+                        <>
+                          <Link className="act check" to={`/review?recording=${r.id}`}>
+                            <CheckIcon />
+                            校对
+                          </Link>
+                          <DownloadButton rec={r} />
+                        </>
+                      )}
                       <button
                         className="act del"
                         onClick={() => setDeleteTarget(r)}
