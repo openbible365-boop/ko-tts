@@ -3464,6 +3464,10 @@ button:disabled {
   color: var(--accent-text);
   border-color: transparent;
 }
+/* 重录: 白底, 需显式深色字(全局 button 默认白字会白底白字看不见) */
+.st-redo {
+  color: var(--text);
+}
 .st-redo:hover:not(:disabled) {
   border-color: var(--muted);
   filter: none;
