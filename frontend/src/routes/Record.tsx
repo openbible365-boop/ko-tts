@@ -386,28 +386,19 @@ function Session({ scriptId }: { scriptId: string }) {
   const passMut = useMutation({ mutationFn: passLine, onSuccess: invalidate })
   const redoMut = useMutation({ mutationFn: rerecordLine, onSuccess: invalidate })
 
-  // 录完(自动)后, 跳到下一未录行并自动开录, 实现连续朗读
-  function autoAdvance(fromSeg: Segment) {
-    const data = queryClient.getQueryData<Segment[]>(['rec-segments', recId]) ?? []
-    const next = [...data]
-      .sort((a, b) => a.segment_index - b.segment_index)
-      .find((s) => s.segment_index > fromSeg.segment_index && s.status === 'pending_recording')
-    if (next) void startRec(next)
-  }
-
   async function startRec(seg: Segment) {
     setErr(null)
     try {
       setActiveSeg(seg.id)
-      // 静音 3 秒自动停止 -> 走自动上传(并续录下一段)
-      await recorder.start(() => void stopAndUpload(seg, true))
+      // 静音 3 秒自动停止+上传(不自动续录, 下一行由用户手动开始)
+      await recorder.start(() => void stopAndUpload(seg))
     } catch (e) {
       setActiveSeg(null)
       setErr('无法访问麦克风：' + (e as Error).message)
     }
   }
 
-  async function stopAndUpload(seg: Segment, auto = false) {
+  async function stopAndUpload(seg: Segment) {
     if (stoppingRef.current) return // 防止手动停止与静音自动停止重入
     stoppingRef.current = true
     const { blob, durationMs } = await recorder.stop()
@@ -419,7 +410,6 @@ function Session({ scriptId }: { scriptId: string }) {
       await uploadFileToR2(url, file)
       await completeLineRecording(seg.id, durationMs)
       await invalidate()
-      if (auto) autoAdvance(seg) // 仅静音自动停止时续录; 手动「停止」则在此暂停
     } catch (e) {
       setErr('上传失败：' + (e as Error).message)
     } finally {
@@ -447,7 +437,7 @@ function Session({ scriptId }: { scriptId: string }) {
           {rec?.title || '录音'}
         </h1>
         <div className="sub">
-          已通过 {passed} / {rows.length} 行 · 朗读后静音 3 秒自动停止并续录下一段（也可手动「停止」暂停）
+          已通过 {passed} / {rows.length} 行 · 朗读后静音 3 秒自动停止（下一行手动点「录音」开始）
         </div>
         {rec && (
           <SpeakerBar
@@ -519,7 +509,7 @@ function Session({ scriptId }: { scriptId: string }) {
 
                 {/* 状态按钮 */}
                 <div className="rec-status">
-                  {isActive && <span className="vad-hint">静音 3 秒自动继续</span>}
+                  {isActive && <span className="vad-hint">静音 3 秒自动停止</span>}
                   {seg.status === 'approved' && (
                     <>
                       <span className="st-pass">✓ 通过</span>
