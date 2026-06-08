@@ -52,7 +52,9 @@ class Settings(BaseSettings):
     worker_poll_interval_sec: float = 5.0  # worker 空闲轮询间隔
 
     # ASR (faster-whisper)
-    asr_model_size: str = "medium"  # tiny/base/small/medium/large-v3
+    # small 比 medium 约快 3x; 配合范文 initial_prompt 引导, 准确率损失被补偿。
+    # 想换回更准: 设 env ASR_MODEL_SIZE=medium。
+    asr_model_size: str = "small"  # tiny/base/small/medium/large-v3
     asr_compute_type: str = "int8"  # CTranslate2 量化类型 (CPU 推荐 int8)
     asr_language: str = "ko"  # 强制语言, 提高 Korean 准确率
     # beam_size=1(贪心)比默认 5 快约 2~2.5x; 配合范文提词精度损失有限。
