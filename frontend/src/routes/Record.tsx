@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -217,12 +217,24 @@ function LiveWave({ analyser }: { analyser: { current: AnalyserNode | null } }) 
   return <canvas ref={canvasRef} width={360} height={40} className="livewave" />
 }
 
-// ---- 录后播放器: 点击播放该行 clip + 装饰性波形条 ----
-const DECO_BARS = [8, 14, 20, 12, 24, 16, 28, 18, 10, 22, 14, 26, 12, 20, 8, 16, 24, 10, 18, 14]
+// ---- 录后播放器: 点击播放该行 clip + 按时长变长的伪波形条 ----
+// 条数随录音时长变化(约每秒 5 根, 8~64 根), 高度由 segmentId 派生(稳定)
+function makeBars(seed: string, durationMs: number): number[] {
+  const n = Math.max(8, Math.min(64, Math.round((durationMs || 2000) / 200)))
+  let h = 0
+  for (const c of seed) h = (h * 31 + c.charCodeAt(0)) >>> 0
+  const out: number[] = []
+  for (let i = 0; i < n; i++) {
+    h = (h * 1103515245 + 12345) & 0x7fffffff
+    out.push(6 + (h % 24)) // 6~29px
+  }
+  return out
+}
 
-function ClipPlayer({ segmentId }: { segmentId: string }) {
+function ClipPlayer({ segmentId, durationMs }: { segmentId: string; durationMs: number }) {
   const [state, setState] = useState<'idle' | 'loading' | 'playing'>('idle')
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  const bars = useMemo(() => makeBars(segmentId, durationMs), [segmentId, durationMs])
 
   useEffect(() => () => audioRef.current?.pause(), [])
 
@@ -255,7 +267,7 @@ function ClipPlayer({ segmentId }: { segmentId: string }) {
     <button type="button" className="clip-player" onClick={toggle} title="播放">
       <span className="cp-ico">{state === 'playing' ? '❚❚' : state === 'loading' ? '…' : '▶'}</span>
       <span className="cp-bars">
-        {DECO_BARS.map((b, i) => (
+        {bars.map((b, i) => (
           <i key={i} style={{ height: `${b}px` }} />
         ))}
       </span>
@@ -575,7 +587,7 @@ function Session({ scriptId }: { scriptId: string }) {
                   {isActive ? (
                     <LiveWave analyser={recorder.analyser} />
                   ) : hasAudio ? (
-                    <ClipPlayer segmentId={seg.id} />
+                    <ClipPlayer segmentId={seg.id} durationMs={seg.duration_ms} />
                   ) : (
                     <span className="wave-ph">
                       {isBusy
