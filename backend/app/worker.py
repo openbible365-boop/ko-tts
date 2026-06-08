@@ -207,7 +207,10 @@ async def _process_segment(seg_id: uuid.UUID) -> None:
         path = os.path.join(tmp, "clip.wav")
         with open(path, "wb") as f:
             f.write(data)
-        text = await asr.transcribe(path, language=language)
+        # 录音样品: 用范文行做提词偏置, 减少专有/文语词被识别成常见词的误差
+        text = await asr.transcribe(
+            path, language=language, initial_prompt=expected if is_sample else None
+        )
 
     async with SessionLocal() as s, s.begin():
         seg = await s.get(Segment, seg_id)

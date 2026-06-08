@@ -38,20 +38,25 @@ def warm_up() -> None:
     _load_model()
 
 
-def _transcribe_sync(path: str, language: str) -> str:
+def _transcribe_sync(path: str, language: str, initial_prompt: str | None = None) -> str:
     model = _load_model()
     segments, _info = model.transcribe(
         path,
         language=language,
         beam_size=settings.asr_beam_size,
+        initial_prompt=initial_prompt,
     )
     return " ".join(s.text.strip() for s in segments).strip()
 
 
-async def transcribe(path: str, language: str | None = None) -> str:
+async def transcribe(
+    path: str, language: str | None = None, initial_prompt: str | None = None
+) -> str:
     """faster-whisper 是同步 CPU 密集型, 放线程池避免阻塞事件循环。
 
     language: 录音自身的转写语种 (en/zh/ko); None 时回退到 settings 默认。
+    initial_prompt: 提词偏置(录音样品用范文行喂入), 让模型优先识别成范文里的
+        专有/文语词(如圣经词 궁창), 而非滑向常见词。不增加耗时。
     """
     lang = language or settings.asr_language
-    return await asyncio.to_thread(_transcribe_sync, path, lang)
+    return await asyncio.to_thread(_transcribe_sync, path, lang, initial_prompt)
