@@ -52,14 +52,12 @@ class Settings(BaseSettings):
     worker_poll_interval_sec: float = 5.0  # worker 空闲轮询间隔
 
     # ASR (faster-whisper)
-    # small 比 medium 约快 3x; 配合范文 initial_prompt 引导, 准确率损失被补偿。
-    # 想换回更准: 设 env ASR_MODEL_SIZE=medium。
-    asr_model_size: str = "small"  # tiny/base/small/medium/large-v3
+    # medium: small 在"提词偏置"下会把没声音/听不清的也照抄范文文字 -> 误判通过,
+    # 故保留 medium 保证 QC 正确性(速度问题靠硬件升级解决)。
+    asr_model_size: str = "medium"  # tiny/base/small/medium/large-v3
     asr_compute_type: str = "int8"  # CTranslate2 量化类型 (CPU 推荐 int8)
     asr_language: str = "ko"  # 强制语言, 提高 Korean 准确率
-    # beam_size=1(贪心)比默认 5 快约 2~2.5x; 配合范文提词精度损失有限。
-    # 想换回更准: 设 env ASR_BEAM_SIZE=5。
-    asr_beam_size: int = 1
+    asr_beam_size: int = 5
     asr_model_cache_dir: str = "/models"  # 容器内模型缓存目录, 走 named volume
 
     # reaper: 回收陈旧的 worker claim (segmenting / transcribing 卡死)
