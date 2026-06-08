@@ -3187,8 +3187,33 @@ button:disabled {
   color: var(--error);
   margin: 0;
 }
-.rec-speaker {
+.rec-controls {
   margin-top: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 1.2rem;
+  flex-wrap: wrap;
+}
+.rec-device {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+  color: var(--text);
+}
+.rec-device label {
+  color: var(--muted);
+}
+.rec-device select {
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  max-width: 240px;
+}
+.rec-speaker {
   display: flex;
   align-items: center;
   gap: 0.5rem;

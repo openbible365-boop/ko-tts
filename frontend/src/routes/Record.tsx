@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -102,8 +102,12 @@ function useRecorder() {
   }
 
   // onSilenceCb: 检测到"先有说话、随后连续静音 3 秒"时调用一次(自动停止)
-  async function start(onSilenceCb?: () => void) {
-    const s = await navigator.mediaDevices.getUserMedia({ audio: AUDIO_CONSTRAINTS })
+  // deviceId: 指定录音设备(为空用系统默认)
+  async function start(onSilenceCb?: () => void, deviceId?: string) {
+    const audio: MediaTrackConstraints = deviceId
+      ? { ...AUDIO_CONSTRAINTS, deviceId: { exact: deviceId } }
+      : AUDIO_CONSTRAINTS
+    const s = await navigator.mediaDevices.getUserMedia({ audio })
     stream.current = s
     const ctx = new AudioContext()
     ac.current = ctx
@@ -352,6 +356,41 @@ function SpeakerBar({ rec, onSaved }: { rec: Recording; onSaved: () => void }) {
   )
 }
 
+// ---- 录音设备选择: 列表随插拔/授权刷新 ----
+function DeviceSelect({ deviceId, onChange }: { deviceId: string; onChange: (id: string) => void }) {
+  const [devices, setDevices] = useState<MediaDeviceInfo[]>([])
+  const refresh = useCallback(() => {
+    navigator.mediaDevices
+      ?.enumerateDevices()
+      .then((list) => setDevices(list.filter((d) => d.kind === 'audioinput')))
+      .catch(() => {})
+  }, [])
+  useEffect(() => {
+    refresh()
+    navigator.mediaDevices?.addEventListener('devicechange', refresh)
+    return () => navigator.mediaDevices?.removeEventListener('devicechange', refresh)
+  }, [refresh])
+
+  return (
+    <div className="rec-device">
+      <label>录音设备：</label>
+      <select
+        value={deviceId}
+        onFocus={refresh}
+        onChange={(e) => onChange(e.target.value)}
+        title="录一次音授权后才会显示设备名称"
+      >
+        <option value="">默认设备</option>
+        {devices.map((d, i) => (
+          <option key={d.deviceId} value={d.deviceId}>
+            {d.label || `麦克风 ${i + 1}`}
+          </option>
+        ))}
+      </select>
+    </div>
+  )
+}
+
 // ==================== 录音会话 ====================
 function Session({ scriptId }: { scriptId: string }) {
   const queryClient = useQueryClient()
@@ -378,6 +417,7 @@ function Session({ scriptId }: { scriptId: string }) {
   const [activeSeg, setActiveSeg] = useState<string | null>(null)
   const [busySeg, setBusySeg] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const [deviceId, setDeviceId] = useState('')
   const stoppingRef = useRef(false)
   const spaceRef = useRef<() => void>(() => {})
 
@@ -405,7 +445,7 @@ function Session({ scriptId }: { scriptId: string }) {
     try {
       setActiveSeg(seg.id)
       // 静音 3 秒自动停止+上传(不自动续录, 下一行由用户手动开始)
-      await recorder.start(() => void stopAndUpload(seg))
+      await recorder.start(() => void stopAndUpload(seg), deviceId || undefined)
     } catch (e) {
       setActiveSeg(null)
       setErr('无法访问麦克风：' + (e as Error).message)
@@ -469,10 +509,13 @@ function Session({ scriptId }: { scriptId: string }) {
           已通过 {passed} / {rows.length} 行 · 朗读后静音 3 秒自动停止 · 当前行可按空格开始/停止
         </div>
         {rec && (
-          <SpeakerBar
-            rec={rec}
-            onSaved={() => queryClient.invalidateQueries({ queryKey: ['rec-sample', scriptId] })}
-          />
+          <div className="rec-controls">
+            <SpeakerBar
+              rec={rec}
+              onSaved={() => queryClient.invalidateQueries({ queryKey: ['rec-sample', scriptId] })}
+            />
+            <DeviceSelect deviceId={deviceId} onChange={setDeviceId} />
+          </div>
         )}
       </div>
 
