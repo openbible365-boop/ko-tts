@@ -379,6 +379,20 @@ function Session({ scriptId }: { scriptId: string }) {
   const [busySeg, setBusySeg] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const stoppingRef = useRef(false)
+  const spaceRef = useRef<() => void>(() => {})
+
+  // 空格键: 录音中→停止, 否则→开始录当前行(在文本框里输入时不拦截)
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.code !== 'Space' || e.repeat) return
+      const t = e.target as HTMLElement | null
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+      e.preventDefault()
+      spaceRef.current()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: ['rec-segments', recId] })
@@ -418,13 +432,28 @@ function Session({ scriptId }: { scriptId: string }) {
     }
   }
 
+  const rows = [...(segData ?? [])].sort((a, b) => a.segment_index - b.segment_index)
+  const needSpeaker = !rec?.speaker // 未填声音昵称前不能录
+  const firstPending = rows.find((s) => s.status === 'pending_recording')
+
+  // 空格键: 在 effect 里刷新行为闭包(渲染期不可写 ref)
+  useEffect(() => {
+    spaceRef.current = () => {
+      if (activeSeg) {
+        const seg = rows.find((s) => s.id === activeSeg)
+        if (seg) void stopAndUpload(seg)
+      } else if (!busySeg && !needSpeaker && firstPending) {
+        void startRec(firstPending)
+      }
+    }
+  })
+
   if (isLoading) return <div className="recpage muted">准备录音…</div>
   if (isError) return <div className="recpage error">{(error as Error).message}</div>
 
-  const rows = [...(segData ?? [])].sort((a, b) => a.segment_index - b.segment_index)
   const passed = rows.filter((s) => s.status === 'approved').length
-  const needSpeaker = !rec?.speaker // 未填声音昵称前不能录
   const recordingElsewhere = activeSeg !== null || busySeg !== null || needSpeaker
+  const currentSegId = activeSeg ?? firstPending?.id ?? null
 
   return (
     <div className="recpage">
@@ -437,7 +466,7 @@ function Session({ scriptId }: { scriptId: string }) {
           {rec?.title || '录音'}
         </h1>
         <div className="sub">
-          已通过 {passed} / {rows.length} 行 · 朗读后静音 3 秒自动停止（下一行手动点「录音」开始）
+          已通过 {passed} / {rows.length} 行 · 朗读后静音 3 秒自动停止 · 当前行可按空格开始/停止
         </div>
         {rec && (
           <SpeakerBar
@@ -466,8 +495,12 @@ function Session({ scriptId }: { scriptId: string }) {
             seg.status === 'pending_review' || seg.status === 'approved' ? seg.asr_text : null,
           )
 
+          const isCurrent = seg.id === currentSegId
           return (
-            <li key={seg.id} className="rec-row">
+            <li
+              key={seg.id}
+              className={`rec-row ${isActive ? 'recording' : isCurrent ? 'current' : ''}`}
+            >
               <div className="rec-main">
                 {/* 录音/停止按钮 */}
                 {isActive ? (
@@ -502,7 +535,11 @@ function Session({ scriptId }: { scriptId: string }) {
                     <ClipPlayer segmentId={seg.id} />
                   ) : (
                     <span className="wave-ph">
-                      {isBusy ? '上传中…' : '点左侧「录音」开始朗读这一行'}
+                      {isBusy
+                        ? '上传中…'
+                        : isCurrent
+                          ? '当前行 · 按空格或点「录音」开始'
+                          : '点左侧「录音」开始朗读这一行'}
                     </span>
                   )}
                 </div>

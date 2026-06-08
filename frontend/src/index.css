@@ -3309,6 +3309,17 @@ button:disabled {
   align-items: center;
   gap: 0.8rem;
 }
+/* 当前待录行高亮(空格键作用于它) */
+.rec-row.current {
+  border-color: var(--accent);
+  background: #f5f8ff;
+  box-shadow: 0 0 0 2px rgba(47, 91, 255, 0.12);
+}
+/* 正在录音的行 */
+.rec-row.recording {
+  border-color: #e15b5b;
+  background: #fff6f6;
+}
 .rec-btn {
   flex: none;
   display: inline-flex;
