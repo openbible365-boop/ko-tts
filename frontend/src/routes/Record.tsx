@@ -59,6 +59,7 @@ function diffExpected(expected: string, asr: string | null): { word: string; ok:
 // 静音自动分段参数
 const SILENCE_MS = 3000 // 连续静音超过 3 秒自动停止
 const SILENCE_RMS = 0.02 // 低于此 RMS 视为静音(经验阈值)
+const REC_PAGE_SIZE = 20 // 录音页每页行数
 
 // 录音音质: 关掉通话用的降噪/AGC/回声消除(它们会让声音变闷、忽大忽小),
 // 单声道 48kHz 高保真采集, Opus 256kbps。
@@ -430,6 +431,8 @@ function Session({ scriptId }: { scriptId: string }) {
   const [busySeg, setBusySeg] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [deviceId, setDeviceId] = useState('')
+  const [page, setPage] = useState(0)
+  const pageInited = useRef(false)
   const stoppingRef = useRef(false)
   const spaceRef = useRef<() => void>(() => {})
 
@@ -454,6 +457,7 @@ function Session({ scriptId }: { scriptId: string }) {
 
   async function startRec(seg: Segment) {
     setErr(null)
+    setPage(Math.floor(seg.segment_index / REC_PAGE_SIZE)) // 录哪行就翻到哪页
     try {
       setActiveSeg(seg.id)
       // 静音 3 秒自动停止+上传(不自动续录, 下一行由用户手动开始)
@@ -500,12 +504,25 @@ function Session({ scriptId }: { scriptId: string }) {
     }
   })
 
+  // 初次加载定位到"上次录到的那页"(第一条未录所在页), 方便续录
+  useEffect(() => {
+    if (pageInited.current || !firstPending) return
+    pageInited.current = true
+    setPage(Math.floor(firstPending.segment_index / REC_PAGE_SIZE))
+  }, [firstPending])
+
   if (isLoading) return <div className="recpage muted">准备录音…</div>
   if (isError) return <div className="recpage error">{(error as Error).message}</div>
 
   const passed = rows.filter((s) => s.status === 'approved').length
   const recordingElsewhere = activeSeg !== null || busySeg !== null || needSpeaker
   const currentSegId = activeSeg ?? firstPending?.id ?? null
+
+  // 分页(每页 20 条)
+  const pageCount = Math.max(1, Math.ceil(rows.length / REC_PAGE_SIZE))
+  const safePage = Math.min(page, pageCount - 1)
+  const pageStart = safePage * REC_PAGE_SIZE
+  const pageRows = rows.slice(pageStart, pageStart + REC_PAGE_SIZE)
 
   return (
     <div className="recpage">
@@ -535,7 +552,7 @@ function Session({ scriptId }: { scriptId: string }) {
       {err && <p className="rec-err">{err}</p>}
 
       <ol className="rec-list">
-        {rows.map((seg) => {
+        {pageRows.map((seg) => {
           const isActive = activeSeg === seg.id
           const isBusy = busySeg === seg.id
           const transcribing =
@@ -659,6 +676,30 @@ function Session({ scriptId }: { scriptId: string }) {
           )
         })}
       </ol>
+
+      {pageCount > 1 && (
+        <div className="sd-pager">
+          <button disabled={safePage === 0} onClick={() => setPage(0)} title="第一页">
+            «
+          </button>
+          <button disabled={safePage === 0} onClick={() => setPage(safePage - 1)}>
+            ‹ 上一页
+          </button>
+          <span className="sd-pageinfo">
+            第 {safePage + 1} / {pageCount} 页（每页 {REC_PAGE_SIZE} 条）
+          </span>
+          <button disabled={safePage >= pageCount - 1} onClick={() => setPage(safePage + 1)}>
+            下一页 ›
+          </button>
+          <button
+            disabled={safePage >= pageCount - 1}
+            onClick={() => setPage(pageCount - 1)}
+            title="最后一页"
+          >
+            »
+          </button>
+        </div>
+      )}
     </div>
   )
 }
