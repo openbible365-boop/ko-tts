@@ -3,13 +3,13 @@ set -euo pipefail
 
 # 从本地把 ko-tts 部署到 VPS。
 # 用法: ./deploy/deploy.sh [VPS_HOST]
-#   VPS_HOST 默认 deploy@149.28.149.67
+#   VPS_HOST 默认 deploy@43.99.101.9
 # 详见 deploy/DEPLOYMENT.md
 
-VPS_HOST="${1:-deploy@149.28.149.67}"
+VPS_HOST="${1:-deploy@43.99.101.9}"
 SSH_KEY="${SSH_KEY:-$HOME/.ssh/id_ed25519}"
 REMOTE_DIR="/opt/ko-tts"
-DOMAIN="kr-tts.openbible.live"
+DOMAIN="ac.ezra76.com"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
