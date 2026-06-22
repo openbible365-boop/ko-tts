@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     seg_sample_rate: int = 32000  # 切片输出采样率 (单声道 wav)
 
     # 人声分离 (audio-separator, 独立 venv, 仅当 recording.remove_music=True 时启用)
+    # sep_bin: audio-separator CLI 路径。生产镜像在 /opt/sepvenv(见 deploy/Dockerfile);
+    # 本地开发可指向自建 venv 的 bin/audio-separator。
+    sep_bin: str = "/opt/sepvenv/bin/audio-separator"
     sep_model_filename: str = "UVR-MDX-NET-Voc_FT.onnx"
     sep_model_dir: str = "/models/audio-separator"  # 模型缓存(worker_models volume)
     worker_poll_interval_sec: float = 5.0  # worker 空闲轮询间隔
@@ -65,6 +68,10 @@ class Settings(BaseSettings):
     # ~28 分钟), 故 timeout 要足够大, 否则 reaper 会在分离途中把它退回造成反复重切。
     worker_claim_timeout_min: int = 120  # 超过此时长仍在中间状态, 视为陈旧 -> 回退
     worker_reap_interval_sec: float = 300.0  # worker 主循环里的 reap 周期 (5 min)
+
+    # 一键训练: 把 approved 切片转发到 GPU 训练后端 (yuyin /api/train)
+    gpu_train_url: str = ""  # 如 https://tts-api.gtdsm.com/api/train; 空则禁用该功能
+    train_token: str = ""  # 与 GPU 端共享的密钥 (X-Train-Token)
 
     @property
     def cors_origin_list(self) -> list[str]:

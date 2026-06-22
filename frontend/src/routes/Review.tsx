@@ -14,8 +14,10 @@ import {
   downloadDataset,
   getRecording,
   getSegmentAudioUrl,
+  getTrainStatus,
   listSegments,
   rejectSegment,
+  startTraining,
 } from '../lib/endpoints'
 import type { Segment, SegmentStatus } from '../lib/types'
 
@@ -109,8 +111,102 @@ export function Review() {
     mutationFn: () => downloadDataset({ status: 'approved' }),
   })
 
+  // 一键微调: 发起训练 + 轮询 GPU 任务进度
+  const [trainJob, setTrainJob] = useState<string | null>(null)
+  const [trainModal, setTrainModal] = useState(false)
+  const [trainSpeaker, setTrainSpeaker] = useState('')
+  const trainM = useMutation({
+    mutationFn: (speaker: string) => startTraining(speaker),
+    onSuccess: (d) => setTrainJob(d.job_id),
+  })
+  const trainStatusQ = useQuery({
+    queryKey: ['train-status', trainJob],
+    queryFn: () => getTrainStatus(trainJob as string),
+    enabled: !!trainJob,
+    refetchInterval: (q) => {
+      const s = q.state.data?.status
+      return s === 'success' || s === 'error' ? false : 5000
+    },
+  })
+  const TRAIN_LABEL: Record<string, string> = {
+    queued: '排队中…', formatting: '格式化中…', training: '训练中…',
+    success: '训练完成 ✓', error: '训练失败',
+  }
+  const onTrain = () => {
+    setTrainSpeaker(rec?.speaker || '')
+    setTrainModal(true)
+  }
+  const submitTrain = () => {
+    const sp = trainSpeaker.trim()
+    if (!sp) return
+    setTrainModal(false)
+    trainM.mutate(sp)
+  }
+
   return (
     <div className="review">
+      <style>{`
+        @keyframes trainspin { to { transform: rotate(360deg) } }
+        .train-spin { display:inline-block; width:14px; height:14px; border:2px solid rgba(79,70,229,.25);
+          border-top-color:#4f46e5; border-radius:50%; animation:trainspin .8s linear infinite; }
+        .train-banner { display:flex; align-items:flex-start; gap:.6rem; margin:.5rem 0 0;
+          padding:.7rem .9rem; border-radius:10px; font-size:.88rem; line-height:1.5;
+          background:rgba(79,70,229,.07); border:1px solid rgba(79,70,229,.22); color:var(--text,#222); }
+        .train-banner.ok { background:rgba(22,163,74,.09); border-color:rgba(22,163,74,.3); }
+        .train-banner.err { background:rgba(220,38,38,.08); border-color:rgba(220,38,38,.3); }
+        .train-ico { flex-shrink:0; width:20px; height:20px; display:flex; align-items:center; justify-content:center; font-weight:700; }
+        .train-banner.ok .train-ico { color:#16a34a } .train-banner.err .train-ico { color:#dc2626 }
+        .train-seg { margin-left:.4rem; font-size:.74rem; padding:.05rem .4rem; border-radius:4px;
+          background:rgba(0,0,0,.06); color:var(--text-tertiary,#666); }
+        .train-hint { margin-top:.25rem; font-size:.8rem; color:var(--text-tertiary,#666); }
+        .train-mask { position:fixed; inset:0; background:rgba(15,15,25,.45); backdrop-filter:blur(2px);
+          display:flex; align-items:center; justify-content:center; z-index:1000; }
+        .train-card { background:var(--surface,#fff); color:var(--text,#222); width:min(440px,92vw);
+          border-radius:16px; padding:1.4rem 1.5rem; box-shadow:0 20px 60px rgba(0,0,0,.3); }
+        .train-card h3 { margin:0 0 .3rem; font-size:1.1rem; display:flex; align-items:center; gap:.5rem; }
+        .train-card p { margin:0 0 1rem; font-size:.85rem; color:var(--text-tertiary,#666); line-height:1.6; }
+        .train-card input { width:100%; padding:.6rem .7rem; border-radius:9px; font-size:.95rem;
+          border:1px solid var(--border,#ddd); background:var(--bg,#fafafa); color:inherit; box-sizing:border-box; }
+        .train-card .row { display:flex; gap:.6rem; justify-content:flex-end; margin-top:1.2rem; }
+        .train-card button { padding:.55rem 1.1rem; border-radius:9px; font-size:.9rem; cursor:pointer; border:1px solid transparent; }
+        .train-card .ghost { background:transparent; border-color:var(--border,#ccc); color:var(--text,#444); }
+        .train-card .primary { background:#4f46e5; color:#fff; }
+        .train-card .primary:disabled { opacity:.5; cursor:not-allowed; }
+      `}</style>
+
+      {trainModal && (
+        <div className="train-mask" onClick={() => setTrainModal(false)}>
+          <div className="train-card" onClick={(e) => e.stopPropagation()}>
+            <h3>
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#4f46e5" strokeWidth="1.9">
+                <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+              </svg>
+              训练音色
+            </h3>
+            <p>
+              将把该说话人所有<b>「已通过」</b>的切片上传到 GPU 微调出专属音色,
+              耗时几分钟到十几分钟。完成后可在合成页的「微调音色」里选用。
+              <br />
+              若该说话人<b>已训练过</b>,会用<b>最新的已通过切片重新训练并覆盖</b>旧音色。
+            </p>
+            <label style={{ fontSize: '.8rem', color: 'var(--text-tertiary,#666)' }}>说话人</label>
+            <input
+              autoFocus
+              value={trainSpeaker}
+              onChange={(e) => setTrainSpeaker(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && submitTrain()}
+              placeholder="例如 남성1 / 普通话男声"
+            />
+            <div className="row">
+              <button className="ghost" onClick={() => setTrainModal(false)}>取消</button>
+              <button className="primary" disabled={!trainSpeaker.trim()} onClick={submitTrain}>
+                开始训练
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="review-head">
         <div>
           <h1>
@@ -124,24 +220,32 @@ export function Review() {
           </div>
         </div>
         {isStaff && (
-          <button
-            className="btn-export"
-            disabled={exportM.isPending}
-            onClick={() => exportM.mutate()}
-            title="把所有已通过的切片打包成 GPT-SoVITS 数据集(wavs + train.list)"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.9"
+          <div style={{ display: 'flex', gap: '0.6rem', flexShrink: 0, alignItems: 'center' }}>
+            <button
+              className="btn-export"
+              disabled={exportM.isPending}
+              onClick={() => exportM.mutate()}
+              title="把所有已通过的切片打包成 GPT-SoVITS 数据集(wavs + train.list)"
             >
-              <path d="M12 3v12" />
-              <path d="m7 10 5 5 5-5" />
-              <path d="M5 21h14" />
-            </svg>
-            {exportM.isPending ? '导出中…' : '导出数据集 (已通过)'}
-          </button>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
+                <path d="M12 3v12" />
+                <path d="m7 10 5 5 5-5" />
+                <path d="M5 21h14" />
+              </svg>
+              {exportM.isPending ? '导出中…' : '导出数据集 (已通过)'}
+            </button>
+            <button
+              className="btn-export"
+              disabled={trainM.isPending}
+              onClick={onTrain}
+              title="把某说话人所有已通过的切片上传到 GPU 并微调出专属音色"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
+                <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+              </svg>
+              {trainM.isPending ? '提交中…' : '训练音色'}
+            </button>
+          </div>
         )}
       </div>
 
@@ -151,6 +255,36 @@ export function Review() {
       {isStaff && exportM.isSuccess && (
         <p className="rev-msg">已导出 {exportM.data} 段为数据集 zip。</p>
       )}
+      {isStaff && trainM.isError && (
+        <div className="train-banner err">
+          <span className="train-ico">✕</span>
+          <span>{(trainM.error as Error).message}</span>
+        </div>
+      )}
+      {isStaff && trainJob && trainStatusQ.data && (() => {
+        const st = trainStatusQ.data.status
+        const done = st === 'success'
+        const failed = st === 'error'
+        const running = !done && !failed
+        return (
+          <div className={`train-banner${failed ? ' err' : done ? ' ok' : ''}`}>
+            <span className="train-ico">
+              {running ? <span className="train-spin" /> : done ? '✓' : '✕'}
+            </span>
+            <span>
+              <b>音色「{trainStatusQ.data.exp}」</b>
+              <span className="train-seg">{trainStatusQ.data.segments ?? '?'} 段</span>
+              {' · '}{TRAIN_LABEL[st] || st}
+              {trainStatusQ.data.message ? ` — ${trainStatusQ.data.message}` : ''}
+              {done && (
+                <div className="train-hint">
+                  已可在合成页面的「微调音色」下拉里选到它。
+                </div>
+              )}
+            </span>
+          </div>
+        )
+      })()}
 
       {recordingId && isStaff && (
         <p className="filter-tip">

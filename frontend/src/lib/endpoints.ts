@@ -245,6 +245,36 @@ export function deleteSegment(id: string): Promise<void> {
   return api.request<void>(`/segments/${id}`, { method: 'DELETE' })
 }
 
+// 一键微调: 把某说话人的"已通过"切片发到 GPU 训练。返回 GPU 任务 id。
+export interface TrainStartResp {
+  job_id: string
+  exp: string
+  segments: number
+}
+export async function startTraining(
+  speaker: string,
+  opts: { sovits_ep?: number; gpt_ep?: number; batch?: number } = {},
+): Promise<TrainStartResp> {
+  const q = new URLSearchParams({ speaker })
+  if (opts.sovits_ep) q.set('sovits_ep', String(opts.sovits_ep))
+  if (opts.gpt_ep) q.set('gpt_ep', String(opts.gpt_ep))
+  if (opts.batch) q.set('batch', String(opts.batch))
+  return api.request<TrainStartResp>(`/export/train?${q.toString()}`, { method: 'POST' })
+}
+
+export interface TrainStatus {
+  job_id: string
+  exp: string
+  status: string
+  segments?: number | null
+  message?: string | null
+  weights?: { sovits: string[]; gpt: string[] } | null
+  log_tail?: string
+}
+export async function getTrainStatus(jobId: string): Promise<TrainStatus> {
+  return api.request<TrainStatus>(`/export/train/${jobId}`)
+}
+
 // 下载 GPT-SoVITS 数据集 zip(wavs/ + train.list)。带鉴权头, 故用 fetch+blob
 // 自己触发下载, 不能用裸 <a href>。返回打包的段数。
 export async function downloadDataset(
