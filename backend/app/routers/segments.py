@@ -53,12 +53,7 @@ async def list_segments(
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> list[Segment]:
-    stmt = (
-        select(Segment)
-        .order_by(Segment.created_at)
-        .limit(limit)
-        .offset(offset)
-    )
+    stmt = select(Segment)
     if seg_status:
         stmt = stmt.where(Segment.status == seg_status)
     if recording_id:
@@ -67,6 +62,14 @@ async def list_segments(
         stmt = stmt.join(Recording, Segment.recording_id == Recording.id).where(
             Recording.uploaded_by == user.id
         )
+    if recording_id:
+        # 单条录音的所有段是一个有界工作集(=范文行数), 录音/详情页需要全量、
+        # 且要按行号稳定排序 —— 不能用 created_at(批量插入时并列, 排序不确定)
+        # 再套 limit=50, 否则几百行的范文只会随机显示其中 50 行, 录完还会"时隐时现"。
+        stmt = stmt.order_by(Segment.segment_index)
+    else:
+        # 审核/校对列表: 分页返回
+        stmt = stmt.order_by(Segment.created_at).limit(limit).offset(offset)
     return list(await session.scalars(stmt))
 
 
