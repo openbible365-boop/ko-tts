@@ -656,10 +656,16 @@ export function Recordings() {
                   <td>
                     <div className="actions">
                       {r.script_id ? (
-                        <Link className="act check" to={`/record?script=${r.script_id}`}>
-                          <WaveIcon />
-                          继续录音
-                        </Link>
+                        <>
+                          <Link className="act" to={`/record?script=${r.script_id}`}>
+                            <WaveIcon />
+                            {r.status === 'recorded' ? '录音' : '继续录音'}
+                          </Link>
+                          <Link className="act check" to={`/review?recording=${r.id}`}>
+                            <CheckIcon />
+                            校对
+                          </Link>
+                        </>
                       ) : (
                         <>
                           <Link className="act check" to={`/review?recording=${r.id}`}>
