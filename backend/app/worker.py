@@ -16,7 +16,7 @@ import uuid
 
 from sqlalchemy import delete, func, select, update
 
-from app import asr, segmentation, separation, storage, textcompare
+from app import asr, segmentation, separation, storage
 from app.config import settings
 from app.db import SessionLocal
 from app.models import Recording, RecordingStatus, Segment, SegmentStatus
@@ -216,12 +216,9 @@ async def _process_segment(seg_id: uuid.UUID) -> None:
         seg = await s.get(Segment, seg_id)
         seg.asr_text = text
         if is_sample:
-            # 录音样品: 按词规整比对范文行 -> 一致自动通过, 否则标红待人工(通过/重录)
-            seg.status = (
-                SegmentStatus.approved.value
-                if textcompare.is_match(expected, text)
-                else SegmentStatus.pending_review.value
-            )
+            # 录音样品: 不再按识别自动通过, 一律进"待审核"由人工逐条确认(通过/重录/退回)。
+            # asr_text 仍保留, 用于录音页/审核页把与范文不一致的词标红, 辅助人工判断。
+            seg.status = SegmentStatus.pending_review.value
         else:
             seg.status = SegmentStatus.pending_correction.value
 
