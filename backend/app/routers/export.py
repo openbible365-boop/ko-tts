@@ -221,6 +221,8 @@ async def _run_train_job(
 ) -> None:
     """后台: 打包该说话人 approved 切片 -> 上传 GPU -> 记下 GPU job_id。"""
     job = _TRAIN_JOBS[local_id]
+    dataset_key = f"train-datasets/{exp}-{local_id}.zip"
+    staged = False
     try:
         job.update(status="queued", message="打包已通过切片中…")
         async with SessionLocal() as session:
@@ -229,13 +231,19 @@ async def _run_train_job(
             job.update(status="error", message=f"说话人“{speaker}”没有可训练的已通过切片")
             return
         job.update(segments=n, status="queued", message=f"上传 {n} 段到 GPU 中…")
+        # 经 R2 中转: GPU 走 cloudflared 隧道, Cloudflare 有 100MB 请求体上限,
+        # 直传 ~100MB 的 zip 会 413。改为传到 R2 取预签名 URL, 只把 URL 发给 GPU,
+        # GPU 自己从 R2 拉(下载不受该请求体限制)。
+        await storage.put_bytes(dataset_key, payload, content_type="application/zip")
+        staged = True
+        dataset_url = await storage.presigned_get_url(dataset_key, expires_in=3600)
         form = aiohttp.FormData()
         form.add_field("exp", exp)
         form.add_field("sovits_ep", str(sovits_ep))
         form.add_field("gpt_ep", str(gpt_ep))
         form.add_field("batch", str(batch))
-        form.add_field("dataset", payload, filename="dataset.zip", content_type="application/zip")
-        timeout = aiohttp.ClientTimeout(total=600)  # 后台跑, 给足 100MB 上传时间
+        form.add_field("dataset_url", dataset_url)
+        timeout = aiohttp.ClientTimeout(total=600)  # 后台跑, 给足 GPU 下载+受理时间
         async with aiohttp.ClientSession(timeout=timeout) as s:
             async with s.post(
                 settings.gpu_train_url, data=form,
@@ -256,6 +264,13 @@ async def _run_train_job(
         job.update(status="error", message=f"连接 GPU 训练后端失败: {e}")
     except Exception as e:  # noqa: BLE001
         job.update(status="error", message=f"打包/上传失败: {e}")
+    finally:
+        # GPU 在 /train 请求内同步下载完 zip 才返回, 故此处可安全清理 R2 中转文件
+        if staged:
+            try:
+                await storage.delete_object(dataset_key)
+            except Exception:  # noqa: BLE001
+                pass
 
 
 @router.post("/train")
