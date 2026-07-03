@@ -4,9 +4,11 @@
 client 上下文批量签 URL, 避免 N 段 = N 次 client 开关销。
 """
 
+import asyncio
 import io
 import json
 import re
+import uuid
 import zipfile
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
@@ -19,6 +21,7 @@ from sqlalchemy import func, select
 
 from app import storage
 from app.config import settings
+from app.db import SessionLocal
 from app.deps import SessionDep, require_role
 from app.models import ContentCategory, Recording, Segment, SegmentStatus, User, UserRole
 from app.schemas import ExportCategoryStats, ExportStats
@@ -141,21 +144,29 @@ async def _build_dataset_zip(
         stmt = stmt.where(Recording.speaker == speaker)
     rows = (await session.execute(stmt)).all()
 
+    # 并发从 R2 拉取音频: 串行 500 段约 2 分钟(会拖垮同步请求), 共享一个 s3 client、
+    # 信号量限并发到 16, 整体降到十几秒。拉完再在内存里顺序打 zip。
+    sem = asyncio.Semaphore(16)
+    async with storage._client() as s3:
+        async def _fetch(key: str) -> bytes:
+            async with sem:
+                resp = await s3.get_object(Bucket=settings.r2_bucket, Key=key)
+                async with resp["Body"] as body:
+                    return await body.read()
+
+        blobs = await asyncio.gather(*(_fetch(seg.audio_key) for seg, _spk, _lang in rows))
+
     buf = io.BytesIO()
     lines: list[str] = []
-    async with storage._client() as s3:
-        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-            for seg, spk, rec_lang in rows:
-                resp = await s3.get_object(Bucket=settings.r2_bucket, Key=seg.audio_key)
-                async with resp["Body"] as body:
-                    data = await body.read()
-                arc = f"wavs/{seg.id}.wav"
-                zf.writestr(arc, data)
-                spk_name = spk or speaker or "speaker"
-                lang = language or rec_lang or "ko"
-                lines.append(f"{arc}|{spk_name}|{lang}|{seg.text.strip()}")
-            zf.writestr("train.list", "\n".join(lines) + ("\n" if lines else ""))
-            zf.writestr("README.txt", _README)
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for (seg, spk, rec_lang), data in zip(rows, blobs):
+            arc = f"wavs/{seg.id}.wav"
+            zf.writestr(arc, data)
+            spk_name = spk or speaker or "speaker"
+            lang = language or rec_lang or "ko"
+            lines.append(f"{arc}|{spk_name}|{lang}|{seg.text.strip()}")
+        zf.writestr("train.list", "\n".join(lines) + ("\n" if lines else ""))
+        zf.writestr("README.txt", _README)
     return buf.getvalue(), len(lines)
 
 
@@ -198,32 +209,33 @@ async def export_dataset_zip(
     )
 
 
-@router.post("/train")
-async def export_train(
-    me: StaffOnly,
-    session: SessionDep,
-    speaker: Annotated[str, Query(min_length=1, max_length=128, description="按说话人训练")],
-    sovits_ep: Annotated[int, Query(ge=1, le=50)] = 8,
-    gpt_ep: Annotated[int, Query(ge=1, le=50)] = 15,
-    batch: Annotated[int, Query(ge=1, le=16)] = 4,
-) -> dict:
-    """一键微调: 把该说话人的 approved 切片打包发到 GPU 训练后端, 返回 GPU 任务 id。"""
-    if not settings.gpu_train_url or not settings.train_token:
-        raise HTTPException(503, "训练功能未配置 (缺 gpu_train_url / train_token)")
-    payload, n = await _build_dataset_zip(session, speaker=speaker)
-    if n == 0:
-        raise HTTPException(400, f"说话人“{speaker}”没有可训练的已通过切片")
-    # exp 名: 去空白与路径分隔(GPU 端用 exec 跑脚本, 但仍做防御)
-    exp = re.sub(r"[/\\]", "", re.sub(r"\s+", "_", speaker.strip())) or "voice"
+# 本地训练任务表: 打包 500 段(~100MB)要 2 分钟, 同步做会拖垮前端请求(Failed to
+# fetch)。故 POST /train 立即返回本地 job_id, 打包+上传 GPU 在后台协程里跑, 前端轮询。
+# 状态只在内存(后端重启即丢, 与 GPU 侧一致); 单机部署下够用。
+_TRAIN_JOBS: dict[str, dict] = {}
+_TRAIN_TASKS: set = set()  # 持有后台任务引用, 防止被 GC 中途回收
 
-    form = aiohttp.FormData()
-    form.add_field("exp", exp)
-    form.add_field("sovits_ep", str(sovits_ep))
-    form.add_field("gpt_ep", str(gpt_ep))
-    form.add_field("batch", str(batch))
-    form.add_field("dataset", payload, filename="dataset.zip", content_type="application/zip")
-    timeout = aiohttp.ClientTimeout(total=180)
+
+async def _run_train_job(
+    local_id: str, speaker: str, exp: str, sovits_ep: int, gpt_ep: int, batch: int
+) -> None:
+    """后台: 打包该说话人 approved 切片 -> 上传 GPU -> 记下 GPU job_id。"""
+    job = _TRAIN_JOBS[local_id]
     try:
+        job.update(status="queued", message="打包已通过切片中…")
+        async with SessionLocal() as session:
+            payload, n = await _build_dataset_zip(session, speaker=speaker)
+        if n == 0:
+            job.update(status="error", message=f"说话人“{speaker}”没有可训练的已通过切片")
+            return
+        job.update(segments=n, status="queued", message=f"上传 {n} 段到 GPU 中…")
+        form = aiohttp.FormData()
+        form.add_field("exp", exp)
+        form.add_field("sovits_ep", str(sovits_ep))
+        form.add_field("gpt_ep", str(gpt_ep))
+        form.add_field("batch", str(batch))
+        form.add_field("dataset", payload, filename="dataset.zip", content_type="application/zip")
+        timeout = aiohttp.ClientTimeout(total=600)  # 后台跑, 给足 100MB 上传时间
         async with aiohttp.ClientSession(timeout=timeout) as s:
             async with s.post(
                 settings.gpu_train_url, data=form,
@@ -236,19 +248,74 @@ async def export_train(
                         detail = json.loads(text).get("detail", detail)
                     except Exception:
                         pass
-                    # 409(已有训练在跑)原样透传给前端; 其它算上游网关错误
-                    raise HTTPException(409 if r.status == 409 else 502, detail)
-                job = json.loads(text)
+                    job.update(status="error", message=detail)
+                    return
+                gpu_job = json.loads(text)
+        job.update(status="queued", gpu_job_id=gpu_job.get("job_id"), message="已提交 GPU")
     except aiohttp.ClientError as e:
-        raise HTTPException(502, f"连接 GPU 训练后端失败: {e}")
-    return {"job_id": job.get("job_id"), "exp": exp, "segments": n}
+        job.update(status="error", message=f"连接 GPU 训练后端失败: {e}")
+    except Exception as e:  # noqa: BLE001
+        job.update(status="error", message=f"打包/上传失败: {e}")
+
+
+@router.post("/train")
+async def export_train(
+    me: StaffOnly,
+    session: SessionDep,
+    speaker: Annotated[str, Query(min_length=1, max_length=128, description="按说话人训练")],
+    sovits_ep: Annotated[int, Query(ge=1, le=50)] = 8,
+    gpt_ep: Annotated[int, Query(ge=1, le=50)] = 15,
+    batch: Annotated[int, Query(ge=1, le=16)] = 4,
+) -> dict:
+    """一键微调: 立即返回本地 job_id; 打包该说话人 approved 切片 + 上传 GPU 在后台进行。"""
+    if not settings.gpu_train_url or not settings.train_token:
+        raise HTTPException(503, "训练功能未配置 (缺 gpu_train_url / train_token)")
+    # 先快速 count(不下载音频)校验有无可训练切片, 空则立即报错
+    n = await session.scalar(
+        select(func.count())
+        .select_from(Segment)
+        .join(Recording, Segment.recording_id == Recording.id)
+        .where(Segment.status == SegmentStatus.approved.value)
+        .where(Segment.text.isnot(None))
+        .where(Segment.audio_key.isnot(None))
+        .where(Recording.speaker == speaker)
+    )
+    if not n:
+        raise HTTPException(400, f"说话人“{speaker}”没有可训练的已通过切片")
+    # exp 名: 去空白与路径分隔(GPU 端用 exec 跑脚本, 但仍做防御)
+    exp = re.sub(r"[/\\]", "", re.sub(r"\s+", "_", speaker.strip())) or "voice"
+
+    local_id = uuid.uuid4().hex
+    _TRAIN_JOBS[local_id] = {
+        "status": "queued", "exp": exp, "segments": n,
+        "message": "已受理, 打包中…", "gpu_job_id": None,
+    }
+    task = asyncio.create_task(
+        _run_train_job(local_id, speaker, exp, sovits_ep, gpt_ep, batch)
+    )
+    _TRAIN_TASKS.add(task)
+    task.add_done_callback(_TRAIN_TASKS.discard)
+    return {"job_id": local_id, "exp": exp, "segments": n}
 
 
 @router.get("/train/{job_id}")
 async def export_train_status(me: StaffOnly, job_id: str) -> dict:
-    """查 GPU 训练任务进度(转发到 GPU /api/train/{job_id})。"""
+    """查训练进度: 本地打包/上传阶段读内存任务表; 已转发 GPU 后代理到 GPU。"""
     if not settings.gpu_train_url:
         raise HTTPException(503, "训练功能未配置")
+
+    local = _TRAIN_JOBS.get(job_id)
+    if local is not None:
+        gpu_id = local.get("gpu_job_id")
+        # 还在本地打包/上传, 或已出错: 直接返回本地状态(不代理 GPU)
+        if gpu_id is None or local.get("status") == "error":
+            return {
+                "job_id": job_id, "exp": local.get("exp"),
+                "status": local.get("status"), "segments": local.get("segments"),
+                "message": local.get("message"), "weights": None, "log_tail": "",
+            }
+        job_id = gpu_id  # 已提交 GPU: 用 GPU 的 job_id 继续代理查询
+
     base = settings.gpu_train_url.rsplit("/train", 1)[0]  # -> .../api
     try:
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as s:
@@ -258,9 +325,15 @@ async def export_train_status(me: StaffOnly, job_id: str) -> dict:
             ) as r:
                 if r.status != 200:
                     raise HTTPException(r.status, f"GPU: {(await r.text())[:200]}")
-                return await r.json()
+                gpu_status = await r.json()
     except aiohttp.ClientError as e:
         raise HTTPException(502, f"连接 GPU 训练后端失败: {e}")
+    # 带上本地记录的 exp/segments(GPU 侧字段齐全时以 GPU 为准)
+    if local is not None:
+        gpu_status.setdefault("exp", local.get("exp"))
+        if gpu_status.get("segments") is None:
+            gpu_status["segments"] = local.get("segments")
+    return gpu_status
 
 
 @router.get("/stats", response_model=ExportStats)
