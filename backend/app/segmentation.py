@@ -61,13 +61,13 @@ def compute_segments(
     target_len: float,
     max_len: float,
 ) -> list[tuple[float, float]]:
-    """把语音切成 ~target_len 的片段, 并在句末停顿(静音)处下刀。
+    """把语音切成 ~target_len 的片段, 并尽量在**句末停顿**(较长的静音)处下刀。
 
-    1. 静音区间取补集 -> 语音块(块之间就是停顿)。
-    2. 贪心合并相邻语音块: 当前段达到 target_len 就收, 或再加下一块会超过
-       max_len 就收 —— 收口处恰是某块的末尾, 即一个静音边界(句末停顿)。
-       这样每刀都落在停顿上, 段长在 ~target_len 上下浮动而非死板等分。
-    3. 兜底: 单块连续语音仍超过 max_len(整段无停顿)才硬切; 短于 min_len 的丢弃。
+    1. 静音区间取补集 -> 语音块(块之间就是停顿, 停顿越长=越像句末)。
+    2. 从当前起点向后, 在"段长 ∈ [pref_lo, max_len]"的所有候选断点里, **挑停顿最长的那个**
+       下刀(并列时取最接近 target_len 的)。这样句中换气(短停顿, 如 0.25s)不会被选中,
+       只在真正的句末长停顿处断开。pref_lo 取 0.6*target, 保证段不至于太碎。
+    3. 兜底: 整块连续语音超过 max_len 仍无停顿才硬切; 短于 min_len 的尾巴丢弃。
 
     end 为 None 的静音(常见于文件结尾)视为延伸到末尾。
     """
@@ -90,17 +90,45 @@ def compute_segments(
     if not speech:
         return []
 
-    # 贪心合并, 只在语音块端点(= 静音边界)处断开
+    n = len(speech)
+
+    def gap_after(k: int) -> float:
+        # 语音块 k 之后的停顿时长(= 与下一块之间的静音长度); 末块记 0
+        return speech[k + 1][0] - speech[k][1] if k + 1 < n else 0.0
+
+    pref_lo = max(min_len, target_len * 0.6)
+
+    # 只在语音块端点(= 静音边界)处断开; 选点偏好"更长的停顿"
     merged: list[tuple[float, float]] = []
-    seg_start, seg_end = speech[0]
-    for st, en in speech[1:]:
-        cur = seg_end - seg_start
-        if cur >= target_len or (en - seg_start) > max_len:
-            merged.append((seg_start, seg_end))
-            seg_start, seg_end = st, en
+    i = 0
+    while i < n:
+        seg_start = speech[i][0]
+        # 能纳入而不超 max_len 的最远块 j
+        j = i
+        while j + 1 < n and (speech[j + 1][1] - seg_start) <= max_len:
+            j += 1
+        # 段长落在 [min_len, max_len] 的候选收口块
+        cands = [
+            k for k in range(i, j + 1)
+            if min_len <= (speech[k][1] - seg_start) <= max_len
+        ]
+        if cands:
+            # 优先"够长(>=pref_lo)"的候选; 其中挑停顿最长者, 并列取最接近 target
+            strong = [k for k in cands if (speech[k][1] - seg_start) >= pref_lo]
+            pool = strong or cands
+            best = max(
+                pool,
+                key=lambda k: (
+                    round(gap_after(k), 3),
+                    -abs((speech[k][1] - seg_start) - target_len),
+                ),
+            )
+            merged.append((seg_start, speech[best][1]))
+            i = best + 1
         else:
-            seg_end = en
-    merged.append((seg_start, seg_end))
+            # 无合规断点: 要么单块连续语音 > max_len(交给下面硬切), 要么只剩短尾
+            merged.append((seg_start, speech[j][1]))
+            i = j + 1
 
     # 兜底硬切 + 丢短
     out: list[tuple[float, float]] = []
