@@ -124,7 +124,10 @@ async def _process_recording(rec_id: uuid.UUID) -> None:
         for idx, (start, end) in enumerate(spans):
             seg_id = uuid.uuid4()
             out = os.path.join(tmp, f"{seg_id}.wav")
-            await segmentation.cut_clip(seg_src, start, end, out, settings.seg_sample_rate)
+            await segmentation.cut_clip(
+                seg_src, start, end, out, settings.seg_sample_rate,
+                duration=meta["duration_ms"] / 1000.0,
+            )
             with open(out, "rb") as f:
                 clip = f.read()
             key = storage.segment_key(seg_id)

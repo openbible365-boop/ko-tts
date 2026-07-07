@@ -142,10 +142,27 @@ def compute_segments(
     return out
 
 
-async def cut_clip(src: str, start: float, end: float, out_path: str, sample_rate: int) -> None:
+# 切片首尾各留一点余音(伸进句末停顿), 避免切在语音边缘听起来"一下子没声音";
+# 再加极短淡入淡出, 消除硬切处的爆音/咔哒声。pad 取略小于最短静音(0.25s)以免吃到下一句。
+CLIP_PAD_SEC = 0.18
+CLIP_FADE_SEC = 0.02
+
+
+async def cut_clip(
+    src: str, start: float, end: float, out_path: str, sample_rate: int,
+    duration: float | None = None,
+) -> None:
+    # 首尾各外扩 pad(伸进相邻停顿); 起点不小于 0, 终点不超过总时长
+    ps = max(0.0, start - CLIP_PAD_SEC)
+    pe = end + CLIP_PAD_SEC
+    if duration is not None:
+        pe = min(pe, duration)
+    dur = max(0.05, pe - ps)
+    fade = min(CLIP_FADE_SEC, dur / 4)
+    af = f"afade=t=in:st=0:d={fade:.3f},afade=t=out:st={dur - fade:.3f}:d={fade:.3f}"
     rc, _, err = await _run(
-        "ffmpeg", "-y", "-i", src,
-        "-ss", f"{start}", "-to", f"{end}",
+        "ffmpeg", "-y", "-ss", f"{ps:.3f}", "-i", src, "-t", f"{dur:.3f}",
+        "-af", af,
         "-ac", "1", "-ar", str(sample_rate), "-c:a", "pcm_s16le",
         out_path,
     )
