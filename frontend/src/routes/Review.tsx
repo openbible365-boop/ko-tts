@@ -479,11 +479,12 @@ function TrimPanel({ seg, onDone }: { seg: Segment; onDone: () => void }) {
     const ctx = cv.getContext('2d')
     if (!ctx) return
     ctx.clearRect(0, 0, cv.width, cv.height)
+    const mx = Math.max(...peaks, 0.01) // 按最大峰值归一化, 填满高度
     for (let i = 0; i < peaks.length; i++) {
       const t = ((i + 0.5) / peaks.length) * dur
       const inSel = t >= start && t <= end
       ctx.fillStyle = inSel ? '#d97706' : 'rgba(150,140,125,0.4)'
-      const bh = Math.max(3, peaks[i] * H * 0.92)
+      const bh = Math.max(3, (peaks[i] / mx) * H * 0.9)
       ctx.fillRect(i * BW, (H - bh) / 2, BW * 0.62, bh)
     }
   }, [peaks, start, end, dur])
