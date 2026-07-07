@@ -228,6 +228,13 @@ export function correctSegment(id: string, text: string): Promise<Segment> {
   return api.request<Segment>(`/segments/${id}/correct`, { json: { text } })
 }
 
+// 裁剪切片: 只保留 [startMs, endMs](相对切片自身), 后端重切存回 R2
+export function trimSegment(id: string, startMs: number, endMs: number): Promise<Segment> {
+  return api.request<Segment>(`/segments/${id}/trim`, {
+    json: { start_ms: Math.round(startMs), end_ms: Math.round(endMs) },
+  })
+}
+
 export function approveSegment(id: string): Promise<Segment> {
   return api.request<Segment>(`/segments/${id}/approve`, { method: 'POST' })
 }

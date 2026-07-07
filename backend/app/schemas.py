@@ -125,6 +125,12 @@ class SegmentCorrect(BaseModel):
     text: str = Field(min_length=1, max_length=10000)
 
 
+class SegmentTrim(BaseModel):
+    # 对切片裁剪: 保留 [start_ms, end_ms](相对该切片自身, 从 0 起)
+    start_ms: int = Field(ge=0)
+    end_ms: int = Field(gt=0)
+
+
 class RecordComplete(BaseModel):
     # 客户端录完上传后回传该行音频时长(毫秒), 可选
     duration_ms: int | None = Field(default=None, ge=0)

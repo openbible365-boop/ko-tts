@@ -1,3 +1,6 @@
+import asyncio
+import os
+import tempfile
 import uuid
 from datetime import UTC, datetime
 from typing import Annotated
@@ -6,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 
 from app import storage
+from app.config import settings
 from app.deps import CurrentUser, SessionDep, require_role
 from app.models import Recording, RecordingStatus, Segment, SegmentStatus, User, UserRole
 from app.schemas import (
@@ -14,6 +18,7 @@ from app.schemas import (
     SegmentCorrect,
     SegmentRead,
     SegmentReject,
+    SegmentTrim,
 )
 
 router = APIRouter(prefix="/segments", tags=["segments"])
@@ -185,6 +190,87 @@ async def delete_segment(
             pass
     await session.delete(seg)
     await session.commit()
+
+
+# ---- 裁剪 (对切片本身裁前/裁后, 重切存回 R2) ----
+TRIM_FADE_SEC = 0.01
+TRIM_MIN_SEC = 0.3
+
+
+async def _ffprobe_duration(path: str) -> float | None:
+    proc = await asyncio.create_subprocess_exec(
+        "ffprobe", "-v", "quiet", "-show_entries", "format=duration",
+        "-of", "default=nokey=1:noprint_wrappers=1", path,
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+    )
+    out, _ = await proc.communicate()
+    try:
+        return float(out.decode().strip())
+    except Exception:  # noqa: BLE001
+        return None
+
+
+@router.post("/{segment_id}/trim", response_model=SegmentRead)
+async def trim_segment(
+    segment_id: uuid.UUID,
+    data: SegmentTrim,
+    user: CurrentUser,
+    session: SessionDep,
+) -> Segment:
+    """裁剪切片: 只保留 [start_ms, end_ms](相对切片自身), 重切后存回 R2、更新时长。
+
+    裁剪是对切片文件本身的操作(可重复裁); 若裁过头想还原, 对该录音「重新切分」即可
+    (会从原始音频重切覆盖)。contributor 只能裁自己录音的切片, reviewer/admin 不限。
+    """
+    seg = await _load_with_access(segment_id, user, session)
+    if not seg.audio_key:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Segment has no audio clip")
+    if seg.status == SegmentStatus.transcribing.value:
+        raise HTTPException(status.HTTP_409_CONFLICT, "切片正在识别中, 稍后再裁")
+
+    start_s = data.start_ms / 1000.0
+    end_s = data.end_ms / 1000.0
+    if end_s - start_s < TRIM_MIN_SEC:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"裁剪后不能短于 {TRIM_MIN_SEC}s")
+
+    clip = await storage.get_bytes(seg.audio_key)
+    with tempfile.TemporaryDirectory() as tmp:
+        src = os.path.join(tmp, "in.wav")
+        out = os.path.join(tmp, "out.wav")
+        with open(src, "wb") as f:
+            f.write(clip)
+        dur = await _ffprobe_duration(src)
+        if dur is None:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "无法读取切片时长")
+        if start_s >= dur:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "起点超出切片长度")
+        end_s = min(end_s, dur)
+        seg_dur = end_s - start_s
+        if seg_dur < TRIM_MIN_SEC:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"裁剪后不能短于 {TRIM_MIN_SEC}s")
+        fade = min(TRIM_FADE_SEC, seg_dur / 4)
+        af = f"afade=t=in:st=0:d={fade:.3f},afade=t=out:st={seg_dur - fade:.3f}:d={fade:.3f}"
+        proc = await asyncio.create_subprocess_exec(
+            "ffmpeg", "-y", "-ss", f"{start_s:.3f}", "-i", src, "-t", f"{seg_dur:.3f}",
+            "-af", af, "-ac", "1", "-ar", str(settings.seg_sample_rate),
+            "-c:a", "pcm_s16le", out,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        _, err = await proc.communicate()
+        if proc.returncode != 0:
+            raise HTTPException(
+                status.HTTP_500_INTERNAL_SERVER_ERROR,
+                f"裁剪失败: {err.decode('utf-8', 'replace')[:200]}",
+            )
+        with open(out, "rb") as f:
+            new_bytes = f.read()
+
+    await storage.put_bytes(seg.audio_key, new_bytes, content_type="audio/wav")
+    seg.duration_ms = int(round(seg_dur * 1000))
+    seg.end_ms = (seg.start_ms or 0) + seg.duration_ms
+    await session.commit()
+    await session.refresh(seg)
+    return seg
 
 
 # ==================== 录音样品: 逐行录音 (owner 或 admin) ====================

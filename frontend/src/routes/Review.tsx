@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   useMutation,
   useQueries,
@@ -18,6 +18,7 @@ import {
   listSegments,
   rejectSegment,
   startTraining,
+  trimSegment,
 } from '../lib/endpoints'
 import type { Segment, SegmentStatus } from '../lib/types'
 
@@ -381,6 +382,7 @@ function SegmentCard({ seg, isStaff }: { seg: Segment; isStaff: boolean }) {
   const queryClient = useQueryClient()
   const onDone = () => queryClient.invalidateQueries({ queryKey: ['segments'] })
   const st = ST[seg.status] ?? { cls: 'wait', label: seg.status }
+  const [trimming, setTrimming] = useState(false)
 
   return (
     <article className="rev">
@@ -400,6 +402,27 @@ function SegmentCard({ seg, isStaff }: { seg: Segment; isStaff: boolean }) {
 
       <SegmentPlayer seg={seg} />
 
+      {seg.audio_key && (
+        <div style={{ marginTop: 6, display: 'flex', justifyContent: 'flex-end' }}>
+          <button
+            type="button"
+            onClick={() => setTrimming((v) => !v)}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+              padding: '0.25rem 0.6rem', fontSize: '0.78rem', cursor: 'pointer',
+              borderRadius: 6, border: '1px solid var(--border, #ddd)',
+              background: trimming ? 'rgba(217,119,6,0.08)' : 'transparent',
+              color: trimming ? 'var(--accent, #d97706)' : 'var(--text-secondary, #555)',
+            }}
+          >
+            ✂ {trimming ? '收起' : '裁剪'}
+          </button>
+        </div>
+      )}
+      {trimming && seg.audio_key && (
+        <TrimPanel seg={seg} onDone={() => { setTrimming(false); onDone() }} />
+      )}
+
       {seg.status === 'pending_review' ? (
         isStaff ? (
           <ReviewActions seg={seg} onDone={onDone} />
@@ -413,6 +436,99 @@ function SegmentCard({ seg, isStaff }: { seg: Segment; isStaff: boolean }) {
         <CorrectActions seg={seg} onDone={onDone} />
       )}
     </article>
+  )
+}
+
+// 裁剪面板: 拖动起点/终点裁掉切片前后, 试听选中段, 保存后端重切(覆盖原切片)。
+function TrimPanel({ seg, onDone }: { seg: Segment; onDone: () => void }) {
+  const MIN = 0.3
+  const [url, setUrl] = useState<string | null>(null)
+  const [dur, setDur] = useState(Math.max(MIN, seg.duration_ms / 1000))
+  const [start, setStart] = useState(0)
+  const [end, setEnd] = useState(Math.max(MIN, seg.duration_ms / 1000))
+  const [playing, setPlaying] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const stopAtRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    getSegmentAudioUrl(seg.id)
+      .then((r) => { if (!cancelled) setUrl(r.url) })
+      .catch(() => { if (!cancelled) setErr('加载音频失败') })
+    return () => { cancelled = true; audioRef.current?.pause() }
+  }, [seg.id])
+
+  const m = useMutation({
+    mutationFn: () => trimSegment(seg.id, start * 1000, end * 1000),
+    onSuccess: onDone,
+  })
+
+  function playSelection() {
+    const a = audioRef.current
+    if (!a || !url) return
+    if (playing) { a.pause(); return }
+    a.currentTime = start
+    stopAtRef.current = end
+    void a.play()
+  }
+
+  const kept = Math.max(0, end - start)
+  const changed = start > 0.02 || end < dur - 0.02
+  const canSave = kept >= MIN && changed && !m.isPending
+  const pct = (v: number) => `${(v / dur) * 100}%`
+
+  return (
+    <div style={{ margin: '8px 0 4px', padding: '12px 14px', border: '1px solid var(--border-default,#e8e0d4)', borderRadius: 10, background: 'var(--bg-card,#faf8f4)' }}>
+      <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary,#555)', marginBottom: 8 }}>
+        裁剪:拖动起点 / 终点裁掉前后，先「试听选中」，满意再「保存」（会覆盖原切片；裁过头可对该录音重新切分还原）。
+      </div>
+      <div style={{ position: 'relative', height: 26, borderRadius: 6, background: 'var(--border,#eee)', overflow: 'hidden', marginBottom: 10 }}>
+        <div style={{ position: 'absolute', top: 0, bottom: 0, left: pct(start), width: pct(kept), background: 'rgba(217,119,6,0.35)', borderLeft: '2px solid var(--accent,#d97706)', borderRight: '2px solid var(--accent,#d97706)' }} />
+      </div>
+      <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-tertiary,#888)' }}>起点 {start.toFixed(2)}s</label>
+      <input type="range" min={0} max={dur} step={0.01} value={start}
+        onChange={(e) => setStart(Math.min(parseFloat(e.target.value), end - MIN))}
+        style={{ width: '100%' }} />
+      <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-tertiary,#888)', marginTop: 4 }}>终点 {end.toFixed(2)}s</label>
+      <input type="range" min={0} max={dur} step={0.01} value={end}
+        onChange={(e) => setEnd(Math.max(parseFloat(e.target.value), start + MIN))}
+        style={{ width: '100%' }} />
+      <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary,#555)', margin: '6px 0' }}>
+        保留 <b>{kept.toFixed(2)}s</b>（原 {dur.toFixed(2)}s；裁掉前 {start.toFixed(2)}s、后 {Math.max(0, dur - end).toFixed(2)}s）
+      </div>
+      {err && <div style={{ color: '#c0392b', fontSize: '0.78rem' }}>{err}</div>}
+      {m.isError && <div style={{ color: '#c0392b', fontSize: '0.78rem' }}>{(m.error as Error).message}</div>}
+      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+        <button type="button" onClick={playSelection} disabled={!url}
+          style={{ padding: '0.35rem 0.8rem', fontSize: '0.8rem', borderRadius: 6, border: '1px solid var(--border,#ddd)', background: 'transparent', cursor: url ? 'pointer' : 'not-allowed' }}>
+          {playing ? '⏸ 停止' : '▶ 试听选中'}
+        </button>
+        <button type="button" onClick={() => m.mutate()} disabled={!canSave}
+          style={{ padding: '0.35rem 0.9rem', fontSize: '0.8rem', borderRadius: 6, border: 'none', background: canSave ? 'var(--accent,#d97706)' : 'var(--border,#ccc)', color: '#fff', cursor: canSave ? 'pointer' : 'not-allowed' }}>
+          {m.isPending ? '保存中…' : '保存裁剪'}
+        </button>
+      </div>
+      {url && (
+        <audio ref={audioRef} src={url}
+          onLoadedMetadata={(e) => {
+            const d = e.currentTarget.duration
+            if (isFinite(d) && d > 0) {
+              setDur(d)
+              setEnd((prev) => (prev > d || Math.abs(prev - seg.duration_ms / 1000) < 0.001) ? d : prev)
+            }
+          }}
+          onPlay={() => setPlaying(true)}
+          onPause={() => setPlaying(false)}
+          onTimeUpdate={(e) => {
+            if (stopAtRef.current != null && e.currentTarget.currentTime >= stopAtRef.current) {
+              e.currentTarget.pause()
+              stopAtRef.current = null
+            }
+          }}
+          style={{ display: 'none' }} />
+      )}
+    </div>
   )
 }
 
