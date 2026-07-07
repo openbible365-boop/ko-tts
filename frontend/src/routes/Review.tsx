@@ -230,7 +230,7 @@ export function Review() {
               placeholder="留空 = 全部;或填 N 条(均匀抽样)"
             />
             <p style={{ margin: '.5rem 0 0', fontSize: '.78rem', color: 'var(--text-tertiary,#888)', lineHeight: 1.5 }}>
-              填了条数会跨全部素材<b>均匀抽 N 条</b>训练,音色名带 <b>_N</b> 后缀独立成一个音色。
+              填了条数会从全部素材里<b>随机抽 N 条</b>训练,音色名带 <b>_N</b> 后缀独立成一个音色。
               想对比效果就分别用 50 / 200 / 500 各训一次(音色如 <code>{(trainSpeaker.trim() || '声音')}_50</code>),
               在合成页逐个试听比较。GPU 单卡,请一个训完再训下一个。
             </p>

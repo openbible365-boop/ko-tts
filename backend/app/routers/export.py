@@ -7,6 +7,7 @@ client 上下文批量签 URL, 避免 N 段 = N 次 client 开关销。
 import asyncio
 import io
 import json
+import random
 import re
 import uuid
 import zipfile
@@ -128,7 +129,7 @@ async def _build_dataset_zip(
     """组 GPT-SoVITS 数据集 zip(wavs/ + train.list + README), 返回 (字节, 段数)。
 
     供 /dataset.zip 下载与 /train 转发共用。语言码默认取每条录音的 language。
-    limit: 只取 N 条时**跨全部素材均匀抽样**(而非取开头), 便于用不同条数对比训练效果。
+    limit: 只取 N 条时**从全部素材随机抽 N 条**(而非取开头), 便于用不同条数对比训练效果。
     """
     statuses = [s.value for s in (status or [SegmentStatus.approved])]
     stmt = (
@@ -146,13 +147,10 @@ async def _build_dataset_zip(
         stmt = stmt.where(Recording.speaker == speaker)
     rows = (await session.execute(stmt)).all()
 
-    # 只取 N 条: 在全体上均匀抽样(等间隔), 让子集覆盖全部录音/内容, 对比才公平
+    # 只取 N 条: 从全体里**随机抽 N 条**(而非取开头), 让子集覆盖全部录音/内容;
+    # 每次训练随机取样, 用不同条数(50/200/…)对比效果时更有代表性。
     if limit and 0 < limit < len(rows):
-        total = len(rows)
-        if limit == 1:
-            idx = [0]
-        else:
-            idx = sorted({round(i * (total - 1) / (limit - 1)) for i in range(limit)})
+        idx = sorted(random.sample(range(len(rows)), limit))
         rows = [rows[i] for i in idx]
 
     # 并发从 R2 拉取音频: 串行 500 段约 2 分钟(会拖垮同步请求), 共享一个 s3 client、
@@ -231,7 +229,7 @@ async def _run_train_job(
     local_id: str, speaker: str, exp: str, limit: int | None,
     sovits_ep: int, gpt_ep: int, batch: int
 ) -> None:
-    """后台: 打包该说话人 approved 切片(limit 时均匀抽 N 条)-> 上传 GPU -> 记下 GPU job_id。"""
+    """后台: 打包该说话人 approved 切片(limit 时随机抽 N 条)-> 上传 GPU -> 记下 GPU job_id。"""
     job = _TRAIN_JOBS[local_id]
     dataset_key = f"train-datasets/{exp}-{local_id}.zip"
     staged = False
@@ -292,7 +290,7 @@ async def export_train(
     speaker: Annotated[str, Query(min_length=1, max_length=128, description="按说话人训练")],
     count: Annotated[
         int | None,
-        Query(ge=1, le=100000, description="只用 N 条(均匀抽样)训练; 留空=全部。用于不同条数对比"),
+        Query(ge=1, le=100000, description="只用 N 条(随机抽样)训练; 留空=全部。用于不同条数对比"),
     ] = None,
     sovits_ep: Annotated[int, Query(ge=1, le=50)] = 8,
     gpt_ep: Annotated[int, Query(ge=1, le=50)] = 15,
@@ -300,7 +298,7 @@ async def export_train(
 ) -> dict:
     """一键微调: 立即返回本地 job_id; 打包该说话人 approved 切片 + 上传 GPU 在后台进行。
 
-    count: 只用 N 条(跨全部素材均匀抽样)训练, 音色名带 _N 后缀独立成一个音色,
+    count: 只用 N 条(从全部素材随机抽样)训练, 音色名带 _N 后缀独立成一个音色,
     便于用 50/200/500 等不同条数分别训练、在合成页对比效果。
     """
     if not settings.gpu_train_url or not settings.train_token:
