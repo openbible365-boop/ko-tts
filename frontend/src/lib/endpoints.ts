@@ -228,6 +228,14 @@ export function correctSegment(id: string, text: string): Promise<Segment> {
   return api.request<Segment>(`/segments/${id}/correct`, { json: { text } })
 }
 
+// 切片波形峰值(0..1)+时长, 供前端在波形上裁剪(服务端算, 同源免 CORS)
+export function getSegmentWaveform(
+  id: string,
+  buckets = 240,
+): Promise<{ peaks: number[]; duration_ms: number }> {
+  return api.request(`/segments/${id}/waveform?buckets=${buckets}`)
+}
+
 // 裁剪切片: 只保留 [startMs, endMs](相对切片自身), 后端重切存回 R2
 export function trimSegment(id: string, startMs: number, endMs: number): Promise<Segment> {
   return api.request<Segment>(`/segments/${id}/trim`, {

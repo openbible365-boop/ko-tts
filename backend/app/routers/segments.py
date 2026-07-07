@@ -1,7 +1,10 @@
+import array
 import asyncio
+import io
 import os
 import tempfile
 import uuid
+import wave
 from datetime import UTC, datetime
 from typing import Annotated
 
@@ -94,6 +97,46 @@ async def segment_download_url(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Segment has no audio clip")
     url = await storage.presigned_get_url(seg.audio_key, expires_in=DOWNLOAD_TTL)
     return PresignedUrlResponse(url=url, expires_in=DOWNLOAD_TTL)
+
+
+@router.get("/{segment_id}/waveform")
+async def segment_waveform(
+    segment_id: uuid.UUID,
+    user: CurrentUser,
+    session: SessionDep,
+    buckets: Annotated[int, Query(ge=20, le=2000)] = 240,
+) -> dict:
+    """返回切片波形峰值(0..1 的数组)+ 时长, 供前端在波形上直接裁剪。
+
+    服务端读 wav 算峰值, 同源返回, 免去浏览器直接拉 R2 的 CORS 问题。
+    """
+    seg = await _load_with_access(segment_id, user, session)
+    if not seg.audio_key:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Segment has no audio clip")
+    data = await storage.get_bytes(seg.audio_key)
+    try:
+        wf = wave.open(io.BytesIO(data), "rb")
+        nch, fr, nframes = wf.getnchannels(), wf.getframerate(), wf.getnframes()
+        raw = wf.readframes(nframes)
+        wf.close()
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"无法解析音频波形: {e}")
+
+    samples = array.array("h")
+    samples.frombytes(raw[: len(raw) // 2 * 2])
+    if nch > 1:
+        samples = samples[0::nch]
+    total = len(samples)
+    peaks: list[float] = []
+    if total:
+        step = max(1, total // buckets)
+        for i in range(0, total, step):
+            chunk = samples[i : i + step]
+            if chunk:
+                m = max(max(chunk), -min(chunk))
+                peaks.append(round(m / 32768.0, 4))
+    dur_ms = int(total / fr * 1000) if fr else seg.duration_ms
+    return {"peaks": peaks[:buckets], "duration_ms": dur_ms}
 
 
 # ---- 校对 (pending_correction|rejected -> pending_review) ----

@@ -14,6 +14,7 @@ import {
   downloadDataset,
   getRecording,
   getSegmentAudioUrl,
+  getSegmentWaveform,
   getTrainStatus,
   listSegments,
   rejectSegment,
@@ -439,30 +440,79 @@ function SegmentCard({ seg, isStaff }: { seg: Segment; isStaff: boolean }) {
   )
 }
 
-// 裁剪面板: 拖动起点/终点裁掉切片前后, 试听选中段, 保存后端重切(覆盖原切片)。
+// 裁剪面板: 在真实波形上拖拽起点/终点裁掉前后, 试听选中段, 保存后端重切(覆盖原切片)。
 function TrimPanel({ seg, onDone }: { seg: Segment; onDone: () => void }) {
   const MIN = 0.3
   const [url, setUrl] = useState<string | null>(null)
+  const [peaks, setPeaks] = useState<number[] | null>(null)
   const [dur, setDur] = useState(Math.max(MIN, seg.duration_ms / 1000))
   const [start, setStart] = useState(0)
   const [end, setEnd] = useState(Math.max(MIN, seg.duration_ms / 1000))
   const [playing, setPlaying] = useState(false)
+  const [cur, setCur] = useState<number | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const stopAtRef = useRef<number | null>(null)
+  const laneRef = useRef<HTMLDivElement | null>(null)
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
 
   useEffect(() => {
     let cancelled = false
-    getSegmentAudioUrl(seg.id)
-      .then((r) => { if (!cancelled) setUrl(r.url) })
-      .catch(() => { if (!cancelled) setErr('加载音频失败') })
+    getSegmentAudioUrl(seg.id).then((r) => { if (!cancelled) setUrl(r.url) }).catch(() => {})
+    getSegmentWaveform(seg.id, 260)
+      .then((w) => {
+        if (cancelled) return
+        setPeaks(w.peaks)
+        const d = w.duration_ms / 1000
+        if (d > 0) { setDur(d); setEnd((p) => (Math.abs(p - seg.duration_ms / 1000) < 0.001 ? d : Math.min(p, d))) }
+      })
+      .catch(() => { if (!cancelled) setErr('加载波形失败') })
     return () => { cancelled = true; audioRef.current?.pause() }
   }, [seg.id])
+
+  useEffect(() => {
+    const cv = canvasRef.current
+    if (!cv || !peaks || !peaks.length) return
+    const BW = 4, H = 120
+    cv.width = peaks.length * BW
+    cv.height = H
+    const ctx = cv.getContext('2d')
+    if (!ctx) return
+    ctx.clearRect(0, 0, cv.width, cv.height)
+    for (let i = 0; i < peaks.length; i++) {
+      const t = ((i + 0.5) / peaks.length) * dur
+      const inSel = t >= start && t <= end
+      ctx.fillStyle = inSel ? '#d97706' : 'rgba(150,140,125,0.4)'
+      const bh = Math.max(3, peaks[i] * H * 0.92)
+      ctx.fillRect(i * BW, (H - bh) / 2, BW * 0.62, bh)
+    }
+  }, [peaks, start, end, dur])
 
   const m = useMutation({
     mutationFn: () => trimSegment(seg.id, start * 1000, end * 1000),
     onSuccess: onDone,
   })
+
+  function fracFromEvent(clientX: number): number {
+    const lane = laneRef.current
+    if (!lane) return 0
+    const rect = lane.getBoundingClientRect()
+    return Math.min(1, Math.max(0, (clientX - rect.left) / rect.width))
+  }
+  function dragHandle(which: 'start' | 'end', e: React.PointerEvent) {
+    e.preventDefault()
+    const move = (ev: PointerEvent) => {
+      const t = fracFromEvent(ev.clientX) * dur
+      if (which === 'start') setStart(Math.max(0, Math.min(t, end - MIN)))
+      else setEnd(Math.min(dur, Math.max(t, start + MIN)))
+    }
+    const up = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
 
   function playSelection() {
     const a = audioRef.current
@@ -480,57 +530,51 @@ function TrimPanel({ seg, onDone }: { seg: Segment; onDone: () => void }) {
 
   return (
     <div style={{ margin: '8px 0 4px', padding: '12px 14px', border: '1px solid var(--border-default,#e8e0d4)', borderRadius: 10, background: 'var(--bg-card,#faf8f4)' }}>
-      <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary,#555)', marginBottom: 8 }}>
-        裁剪:拖动起点 / 终点裁掉前后，先「试听选中」，满意再「保存」（会覆盖原切片；裁过头可对该录音重新切分还原）。
+      <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary,#555)', marginBottom: 10 }}>
+        在波形上拖动两侧橙色手柄裁掉前 / 后，先「试听选中」，满意再「保存」（覆盖原切片；裁过头可对该录音重新切分还原）。
       </div>
-      <div style={{ position: 'relative', height: 26, borderRadius: 6, background: 'var(--border,#eee)', overflow: 'hidden', marginBottom: 10 }}>
-        <div style={{ position: 'absolute', top: 0, bottom: 0, left: pct(start), width: pct(kept), background: 'rgba(217,119,6,0.35)', borderLeft: '2px solid var(--accent,#d97706)', borderRight: '2px solid var(--accent,#d97706)' }} />
+
+      <div ref={laneRef} style={{ position: 'relative', height: 76, borderRadius: 8, background: 'var(--border,#efe9df)', overflow: 'hidden', touchAction: 'none', userSelect: 'none' }}>
+        {peaks
+          ? <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: 'block' }} />
+          : <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', fontSize: '0.78rem', color: 'var(--text-tertiary,#999)' }}>{err || '加载波形…'}</div>}
+        <div style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: pct(start), background: 'rgba(250,248,244,0.62)', pointerEvents: 'none' }} />
+        <div style={{ position: 'absolute', top: 0, bottom: 0, left: pct(end), right: 0, background: 'rgba(250,248,244,0.62)', pointerEvents: 'none' }} />
+        {cur != null && <div style={{ position: 'absolute', top: 0, bottom: 0, left: pct(cur), width: 2, background: '#111', opacity: 0.55, pointerEvents: 'none' }} />}
+        <div onPointerDown={(e) => dragHandle('start', e)} title="起点"
+          style={{ position: 'absolute', top: 0, bottom: 0, left: pct(start), width: 16, marginLeft: -8, cursor: 'ew-resize', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ width: 4, height: '100%', background: 'var(--accent,#d97706)', borderRadius: 2, boxShadow: '0 0 0 1px rgba(255,255,255,0.7)' }} />
+        </div>
+        <div onPointerDown={(e) => dragHandle('end', e)} title="终点"
+          style={{ position: 'absolute', top: 0, bottom: 0, left: pct(end), width: 16, marginLeft: -8, cursor: 'ew-resize', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ width: 4, height: '100%', background: 'var(--accent,#d97706)', borderRadius: 2, boxShadow: '0 0 0 1px rgba(255,255,255,0.7)' }} />
+        </div>
       </div>
-      <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-tertiary,#888)' }}>起点 {start.toFixed(2)}s</label>
-      <input type="range" min={0} max={dur} step={0.01} value={start}
-        onChange={(e) => setStart(Math.min(parseFloat(e.target.value), end - MIN))}
-        style={{ width: '100%' }} />
-      <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-tertiary,#888)', marginTop: 4 }}>终点 {end.toFixed(2)}s</label>
-      <input type="range" min={0} max={dur} step={0.01} value={end}
-        onChange={(e) => setEnd(Math.max(parseFloat(e.target.value), start + MIN))}
-        style={{ width: '100%' }} />
-      <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary,#555)', margin: '6px 0' }}>
-        保留 <b>{kept.toFixed(2)}s</b>（原 {dur.toFixed(2)}s；裁掉前 {start.toFixed(2)}s、后 {Math.max(0, dur - end).toFixed(2)}s）
+
+      <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary,#555)', margin: '8px 0' }}>
+        保留 <b>{kept.toFixed(2)}s</b>（起 {start.toFixed(2)}s → 止 {end.toFixed(2)}s；原 {dur.toFixed(2)}s，裁前 {start.toFixed(2)}s、裁后 {Math.max(0, dur - end).toFixed(2)}s）
       </div>
-      {err && <div style={{ color: '#c0392b', fontSize: '0.78rem' }}>{err}</div>}
       {m.isError && <div style={{ color: '#c0392b', fontSize: '0.78rem' }}>{(m.error as Error).message}</div>}
-      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+
+      <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
         <button type="button" onClick={playSelection} disabled={!url}
-          style={{
-            padding: '0.4rem 0.9rem', fontSize: '0.82rem', fontWeight: 600, borderRadius: 6,
-            border: '1.5px solid var(--accent,#d97706)',
-            background: playing ? 'var(--accent,#d97706)' : 'var(--bg-card,#fff)',
-            color: playing ? '#fff' : 'var(--accent,#d97706)',
-            cursor: url ? 'pointer' : 'not-allowed', opacity: url ? 1 : 0.5,
-          }}>
+          style={{ padding: '0.4rem 0.9rem', fontSize: '0.82rem', fontWeight: 600, borderRadius: 6, border: '1.5px solid var(--accent,#d97706)', background: playing ? 'var(--accent,#d97706)' : 'var(--bg-card,#fff)', color: playing ? '#fff' : 'var(--accent,#d97706)', cursor: url ? 'pointer' : 'not-allowed', opacity: url ? 1 : 0.5 }}>
           {playing ? '⏸ 停止' : '▶ 试听选中'}
         </button>
         <button type="button" onClick={() => m.mutate()} disabled={!canSave}
-          style={{ padding: '0.35rem 0.9rem', fontSize: '0.8rem', borderRadius: 6, border: 'none', background: canSave ? 'var(--accent,#d97706)' : 'var(--border,#ccc)', color: '#fff', cursor: canSave ? 'pointer' : 'not-allowed' }}>
+          style={{ padding: '0.4rem 1rem', fontSize: '0.82rem', fontWeight: 600, borderRadius: 6, border: 'none', background: canSave ? 'var(--accent,#d97706)' : 'var(--border,#ccc)', color: '#fff', cursor: canSave ? 'pointer' : 'not-allowed' }}>
           {m.isPending ? '保存中…' : '保存裁剪'}
         </button>
       </div>
+
       {url && (
         <audio ref={audioRef} src={url}
-          onLoadedMetadata={(e) => {
-            const d = e.currentTarget.duration
-            if (isFinite(d) && d > 0) {
-              setDur(d)
-              setEnd((prev) => (prev > d || Math.abs(prev - seg.duration_ms / 1000) < 0.001) ? d : prev)
-            }
-          }}
           onPlay={() => setPlaying(true)}
-          onPause={() => setPlaying(false)}
+          onPause={() => { setPlaying(false); setCur(null) }}
           onTimeUpdate={(e) => {
-            if (stopAtRef.current != null && e.currentTarget.currentTime >= stopAtRef.current) {
-              e.currentTarget.pause()
-              stopAtRef.current = null
-            }
+            const t = e.currentTarget.currentTime
+            setCur(t)
+            if (stopAtRef.current != null && t >= stopAtRef.current) { e.currentTarget.pause(); stopAtRef.current = null }
           }}
           style={{ display: 'none' }} />
       )}
