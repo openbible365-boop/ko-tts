@@ -123,10 +123,12 @@ async def _build_dataset_zip(
     content_category=None,
     speaker=None,
     language=None,
+    limit=None,
 ) -> tuple[bytes, int]:
     """组 GPT-SoVITS 数据集 zip(wavs/ + train.list + README), 返回 (字节, 段数)。
 
     供 /dataset.zip 下载与 /train 转发共用。语言码默认取每条录音的 language。
+    limit: 只取 N 条时**跨全部素材均匀抽样**(而非取开头), 便于用不同条数对比训练效果。
     """
     statuses = [s.value for s in (status or [SegmentStatus.approved])]
     stmt = (
@@ -143,6 +145,15 @@ async def _build_dataset_zip(
     if speaker is not None:
         stmt = stmt.where(Recording.speaker == speaker)
     rows = (await session.execute(stmt)).all()
+
+    # 只取 N 条: 在全体上均匀抽样(等间隔), 让子集覆盖全部录音/内容, 对比才公平
+    if limit and 0 < limit < len(rows):
+        total = len(rows)
+        if limit == 1:
+            idx = [0]
+        else:
+            idx = sorted({round(i * (total - 1) / (limit - 1)) for i in range(limit)})
+        rows = [rows[i] for i in idx]
 
     # 并发从 R2 拉取音频: 串行 500 段约 2 分钟(会拖垮同步请求), 共享一个 s3 client、
     # 信号量限并发到 16, 整体降到十几秒。拉完再在内存里顺序打 zip。
@@ -217,16 +228,17 @@ _TRAIN_TASKS: set = set()  # 持有后台任务引用, 防止被 GC 中途回收
 
 
 async def _run_train_job(
-    local_id: str, speaker: str, exp: str, sovits_ep: int, gpt_ep: int, batch: int
+    local_id: str, speaker: str, exp: str, limit: int | None,
+    sovits_ep: int, gpt_ep: int, batch: int
 ) -> None:
-    """后台: 打包该说话人 approved 切片 -> 上传 GPU -> 记下 GPU job_id。"""
+    """后台: 打包该说话人 approved 切片(limit 时均匀抽 N 条)-> 上传 GPU -> 记下 GPU job_id。"""
     job = _TRAIN_JOBS[local_id]
     dataset_key = f"train-datasets/{exp}-{local_id}.zip"
     staged = False
     try:
         job.update(status="queued", message="打包已通过切片中…")
         async with SessionLocal() as session:
-            payload, n = await _build_dataset_zip(session, speaker=speaker)
+            payload, n = await _build_dataset_zip(session, speaker=speaker, limit=limit)
         if n == 0:
             job.update(status="error", message=f"说话人“{speaker}”没有可训练的已通过切片")
             return
@@ -278,15 +290,23 @@ async def export_train(
     me: StaffOnly,
     session: SessionDep,
     speaker: Annotated[str, Query(min_length=1, max_length=128, description="按说话人训练")],
+    count: Annotated[
+        int | None,
+        Query(ge=1, le=100000, description="只用 N 条(均匀抽样)训练; 留空=全部。用于不同条数对比"),
+    ] = None,
     sovits_ep: Annotated[int, Query(ge=1, le=50)] = 8,
     gpt_ep: Annotated[int, Query(ge=1, le=50)] = 15,
     batch: Annotated[int, Query(ge=1, le=16)] = 4,
 ) -> dict:
-    """一键微调: 立即返回本地 job_id; 打包该说话人 approved 切片 + 上传 GPU 在后台进行。"""
+    """一键微调: 立即返回本地 job_id; 打包该说话人 approved 切片 + 上传 GPU 在后台进行。
+
+    count: 只用 N 条(跨全部素材均匀抽样)训练, 音色名带 _N 后缀独立成一个音色,
+    便于用 50/200/500 等不同条数分别训练、在合成页对比效果。
+    """
     if not settings.gpu_train_url or not settings.train_token:
         raise HTTPException(503, "训练功能未配置 (缺 gpu_train_url / train_token)")
     # 先快速 count(不下载音频)校验有无可训练切片, 空则立即报错
-    n = await session.scalar(
+    n_all = await session.scalar(
         select(func.count())
         .select_from(Segment)
         .join(Recording, Segment.recording_id == Recording.id)
@@ -295,22 +315,28 @@ async def export_train(
         .where(Segment.audio_key.isnot(None))
         .where(Recording.speaker == speaker)
     )
-    if not n:
+    if not n_all:
         raise HTTPException(400, f"说话人“{speaker}”没有可训练的已通过切片")
+    # 按条数训练: 音色名带 _N 后缀独立成音色; 留空/超过总数则用全部
+    subset = count is not None and count < n_all
+    use_n = count if subset else n_all
+    limit = use_n if subset else None
     # exp 名: 去空白与路径分隔(GPU 端用 exec 跑脚本, 但仍做防御)
     exp = re.sub(r"[/\\]", "", re.sub(r"\s+", "_", speaker.strip())) or "voice"
+    if subset:
+        exp = f"{exp}_{use_n}"
 
     local_id = uuid.uuid4().hex
     _TRAIN_JOBS[local_id] = {
-        "status": "queued", "exp": exp, "segments": n,
+        "status": "queued", "exp": exp, "segments": use_n,
         "message": "已受理, 打包中…", "gpu_job_id": None,
     }
     task = asyncio.create_task(
-        _run_train_job(local_id, speaker, exp, sovits_ep, gpt_ep, batch)
+        _run_train_job(local_id, speaker, exp, limit, sovits_ep, gpt_ep, batch)
     )
     _TRAIN_TASKS.add(task)
     task.add_done_callback(_TRAIN_TASKS.discard)
-    return {"job_id": local_id, "exp": exp, "segments": n}
+    return {"job_id": local_id, "exp": exp, "segments": use_n}
 
 
 @router.get("/train/{job_id}")

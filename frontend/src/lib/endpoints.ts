@@ -253,9 +253,10 @@ export interface TrainStartResp {
 }
 export async function startTraining(
   speaker: string,
-  opts: { sovits_ep?: number; gpt_ep?: number; batch?: number } = {},
+  opts: { count?: number; sovits_ep?: number; gpt_ep?: number; batch?: number } = {},
 ): Promise<TrainStartResp> {
   const q = new URLSearchParams({ speaker })
+  if (opts.count) q.set('count', String(opts.count))
   if (opts.sovits_ep) q.set('sovits_ep', String(opts.sovits_ep))
   if (opts.gpt_ep) q.set('gpt_ep', String(opts.gpt_ep))
   if (opts.batch) q.set('batch', String(opts.batch))

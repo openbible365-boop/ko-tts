@@ -115,8 +115,10 @@ export function Review() {
   const [trainJob, setTrainJob] = useState<string | null>(null)
   const [trainModal, setTrainModal] = useState(false)
   const [trainSpeaker, setTrainSpeaker] = useState('')
+  const [trainCount, setTrainCount] = useState('') // 训练条数; 空=全部
   const trainM = useMutation({
-    mutationFn: (speaker: string) => startTraining(speaker),
+    mutationFn: (v: { speaker: string; count?: number }) =>
+      startTraining(v.speaker, v.count ? { count: v.count } : {}),
     onSuccess: (d) => setTrainJob(d.job_id),
   })
   const trainStatusQ = useQuery({
@@ -139,8 +141,9 @@ export function Review() {
   const submitTrain = () => {
     const sp = trainSpeaker.trim()
     if (!sp) return
+    const c = parseInt(trainCount, 10)
     setTrainModal(false)
-    trainM.mutate(sp)
+    trainM.mutate({ speaker: sp, count: Number.isFinite(c) && c > 0 ? c : undefined })
   }
 
   return (
@@ -184,10 +187,10 @@ export function Review() {
               训练音色
             </h3>
             <p>
-              将把该说话人所有<b>「已通过」</b>的切片上传到 GPU 微调出专属音色,
+              把该说话人的<b>「已通过」</b>切片上传到 GPU 微调出专属音色,
               耗时几分钟到十几分钟。完成后可在合成页的「微调音色」里选用。
               <br />
-              若该说话人<b>已训练过</b>,会用<b>最新的已通过切片重新训练并覆盖</b>旧音色。
+              若同名音色<b>已训练过</b>,会用最新切片<b>重新训练并覆盖</b>。
             </p>
             <label style={{ fontSize: '.8rem', color: 'var(--text-tertiary,#666)' }}>说话人</label>
             <input
@@ -197,6 +200,40 @@ export function Review() {
               onKeyDown={(e) => e.key === 'Enter' && submitTrain()}
               placeholder="例如 남성1 / 普通话男声"
             />
+            <label style={{ fontSize: '.8rem', color: 'var(--text-tertiary,#666)', marginTop: '.9rem', display: 'block' }}>
+              训练条数
+            </label>
+            <div style={{ display: 'flex', gap: '.4rem', marginBottom: '.5rem', flexWrap: 'wrap' }}>
+              {['50', '200', '500', ''].map((c) => (
+                <button
+                  key={c || 'all'}
+                  type="button"
+                  onClick={() => setTrainCount(c)}
+                  style={{
+                    padding: '.35rem .8rem', borderRadius: 8, fontSize: '.85rem', cursor: 'pointer',
+                    border: `1px solid ${trainCount === c ? 'var(--accent,#d97706)' : 'var(--border,#ddd)'}`,
+                    background: trainCount === c ? 'rgba(217,119,6,.1)' : 'transparent',
+                    color: trainCount === c ? 'var(--accent,#d97706)' : 'var(--text,#444)',
+                    fontWeight: trainCount === c ? 600 : 400,
+                  }}
+                >
+                  {c || '全部'}
+                </button>
+              ))}
+            </div>
+            <input
+              type="number"
+              min={1}
+              value={trainCount}
+              onChange={(e) => setTrainCount(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && submitTrain()}
+              placeholder="留空 = 全部;或填 N 条(均匀抽样)"
+            />
+            <p style={{ margin: '.5rem 0 0', fontSize: '.78rem', color: 'var(--text-tertiary,#888)', lineHeight: 1.5 }}>
+              填了条数会跨全部素材<b>均匀抽 N 条</b>训练,音色名带 <b>_N</b> 后缀独立成一个音色。
+              想对比效果就分别用 50 / 200 / 500 各训一次(音色如 <code>{(trainSpeaker.trim() || '声音')}_50</code>),
+              在合成页逐个试听比较。GPU 单卡,请一个训完再训下一个。
+            </p>
             <div className="row">
               <button className="ghost" onClick={() => setTrainModal(false)}>取消</button>
               <button className="primary" disabled={!trainSpeaker.trim()} onClick={submitTrain}>
