@@ -501,7 +501,13 @@ function TrimPanel({ seg, onDone }: { seg: Segment; onDone: () => void }) {
       {m.isError && <div style={{ color: '#c0392b', fontSize: '0.78rem' }}>{(m.error as Error).message}</div>}
       <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
         <button type="button" onClick={playSelection} disabled={!url}
-          style={{ padding: '0.35rem 0.8rem', fontSize: '0.8rem', borderRadius: 6, border: '1px solid var(--border,#ddd)', background: 'transparent', cursor: url ? 'pointer' : 'not-allowed' }}>
+          style={{
+            padding: '0.4rem 0.9rem', fontSize: '0.82rem', fontWeight: 600, borderRadius: 6,
+            border: '1.5px solid var(--accent,#d97706)',
+            background: playing ? 'var(--accent,#d97706)' : 'var(--bg-card,#fff)',
+            color: playing ? '#fff' : 'var(--accent,#d97706)',
+            cursor: url ? 'pointer' : 'not-allowed', opacity: url ? 1 : 0.5,
+          }}>
           {playing ? '⏸ 停止' : '▶ 试听选中'}
         </button>
         <button type="button" onClick={() => m.mutate()} disabled={!canSave}
