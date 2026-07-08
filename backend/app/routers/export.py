@@ -18,6 +18,7 @@ from typing import Annotated
 import aiohttp
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
 from app import storage
@@ -416,6 +417,69 @@ async def delete_voice(me: StaffOnly, exp: str) -> dict:
                     return {"status": "ok"}
     except aiohttp.ClientError as e:
         raise HTTPException(502, f"连接 GPU 失败: {e}")
+
+
+class VoiceTTSReq(BaseModel):
+    text: str = Field(min_length=1, max_length=5000)
+    sovits_weights: str = Field(min_length=1, max_length=300)
+    gpt_weights: str = Field(min_length=1, max_length=300)
+    language: str = Field(default="zh", max_length=8)
+
+
+def _gpu_api_base() -> tuple[str, str]:
+    """返回 (GPU /api 基址, GPU 站点根)。用于代理合成与拼接音频完整 URL。"""
+    base = settings.gpu_train_url.rsplit("/train", 1)[0]  # -> https://host/api
+    origin = base[:-4] if base.endswith("/api") else base
+    return base, origin
+
+
+@router.post("/tts")
+async def export_tts(me: StaffOnly, req: VoiceTTSReq) -> dict:
+    """用训练好的音色合成一段文本(代理 GPU generate_clone, 免建预设直接传权重)。"""
+    if not settings.gpu_train_url or not settings.train_token:
+        raise HTTPException(503, "训练功能未配置")
+    base, _ = _gpu_api_base()
+    form = aiohttp.FormData()
+    form.add_field("text", req.text)
+    form.add_field("language", req.language)
+    form.add_field("engine", "sovits")
+    form.add_field("sovits_weights", req.sovits_weights)
+    form.add_field("gpt_weights", req.gpt_weights)
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as s:
+            async with s.post(
+                f"{base}/tts/generate_clone", data=form,
+                headers={"X-Train-Token": settings.train_token},
+            ) as r:
+                text = await r.text()
+                if r.status != 200:
+                    raise HTTPException(502, f"GPU: {text[:200]}")
+                return json.loads(text)
+    except aiohttp.ClientError as e:
+        raise HTTPException(502, f"连接 GPU 失败: {e}")
+
+
+@router.get("/tts/{task_id}")
+async def export_tts_status(me: StaffOnly, task_id: str) -> dict:
+    """查合成任务进度(代理 GPU /api/tts/task/{id}); audio_url 补成完整地址。"""
+    if not settings.gpu_train_url or not settings.train_token:
+        raise HTTPException(503, "训练功能未配置")
+    base, origin = _gpu_api_base()
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as s:
+            async with s.get(
+                f"{base}/tts/task/{task_id}",
+                headers={"X-Train-Token": settings.train_token},
+            ) as r:
+                if r.status != 200:
+                    raise HTTPException(502, f"GPU: {(await r.text())[:200]}")
+                data = await r.json()
+    except aiohttp.ClientError as e:
+        raise HTTPException(502, f"连接 GPU 失败: {e}")
+    au = data.get("audio_url")
+    if isinstance(au, str) and au.startswith("/"):
+        data["audio_url"] = origin + au  # 拼成完整可播放地址(/api/static 公开免鉴权)
+    return data
 
 
 @router.get("/stats", response_model=ExportStats)

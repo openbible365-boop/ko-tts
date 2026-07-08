@@ -299,6 +299,24 @@ export function deleteVoiceModel(exp: string): Promise<{ status?: string }> {
   return api.request(`/export/voices/${encodeURIComponent(exp)}`, { method: 'DELETE' })
 }
 
+// 用训练好的音色合成一段文本(代理 GPU); 免上传参考, 自动取训练样本作参考
+export function synthVoice(
+  text: string, sovitsWeights: string, gptWeights: string, language: string,
+): Promise<{ task_id: string }> {
+  return api.request(`/export/tts`, {
+    json: { text, sovits_weights: sovitsWeights, gpt_weights: gptWeights, language },
+  })
+}
+export interface VoiceTTSStatus {
+  task_id: string
+  status: string
+  audio_url?: string | null
+  message?: string | null
+}
+export function getVoiceTTSStatus(taskId: string): Promise<VoiceTTSStatus> {
+  return api.request<VoiceTTSStatus>(`/export/tts/${taskId}`)
+}
+
 // 下载 GPT-SoVITS 数据集 zip(wavs/ + train.list)。带鉴权头, 故用 fetch+blob
 // 自己触发下载, 不能用裸 <a href>。返回打包的段数。
 export async function downloadDataset(
