@@ -64,6 +64,7 @@ export function Voices() {
   const [language, setLanguage] = useState('zh')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [compareCosy, setCompareCosy] = useState(true) // 同时用 CosyVoice2 零样本对比
+  const [query, setQuery] = useState('')
   // 结果按 `${exp}::${engine}` 存
   const [results, setResults] = useState<Record<string, SynthState>>({})
   const [synthing, setSynthing] = useState(false)
@@ -97,6 +98,10 @@ export function Voices() {
       n.has(exp) ? n.delete(exp) : n.add(exp)
       return n
     })
+  const q = query.trim().toLowerCase()
+  const filtered = q ? voices.filter((v) => v.exp.toLowerCase().includes(q)) : voices
+  const selectAllUsable = () =>
+    setSelected(new Set(filtered.filter(usable).map((v) => v.exp)))
 
   async function runOne(v: Voice, engine: string) {
     const key = `${v.exp}::${engine}`
@@ -151,62 +156,86 @@ export function Voices() {
         </div>
       </div>
 
-      <section className="coll-card">
-        <table>
-          <thead>
-            <tr>
-              <th style={{ width: 40, textAlign: 'center' }}>选</th>
-              <th>音色名</th>
-              <th>权重</th>
-              <th>最高 epoch</th>
-              <th>状态</th>
-              <th style={{ textAlign: 'center' }}>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {voices.map((v) => (
-              <tr key={v.exp}>
-                <td style={{ textAlign: 'center' }}>
-                  <input
-                    type="checkbox"
-                    checked={selected.has(v.exp)}
-                    disabled={!usable(v)}
-                    onChange={() => toggle(v.exp)}
-                  />
-                </td>
-                <td>
-                  <b>{v.exp}</b>
-                </td>
-                <td>
-                  SoVITS {v.sovits.length} · GPT {v.gpt.length}
-                </td>
-                <td>e{v.epoch}</td>
-                <td>
-                  {usable(v) ? (
-                    <span style={{ color: '#16a06a' }}>✓ 可用</span>
-                  ) : (
-                    <span style={{ color: '#c0392b' }}>缺权重</span>
-                  )}
-                </td>
-                <td style={{ textAlign: 'center' }}>
-                  <button className="act del" onClick={() => setDelTarget(v.exp)}>
-                    删除
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {voices.length === 0 && (
-              <tr>
-                <td colSpan={6}>
-                  <div className="coll-empty">
-                    还没有训练好的音色。去「校对」页用「训练音色」训练一个。
+      <section className="coll-card" style={{ padding: '1rem 1.1rem' }}>
+        <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '0.9rem' }}>
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="搜索音色名…"
+            style={{
+              flex: '1 1 200px', minWidth: 0, padding: '0.45rem 0.7rem', borderRadius: 8,
+              border: '1px solid var(--border-default, #e8e0d4)', fontSize: '0.88rem',
+              background: 'var(--bg-card, #fff)', color: 'var(--text-primary, #333)',
+            }}
+          />
+          <span style={{ fontSize: '0.82rem', color: 'var(--text-tertiary, #888)' }}>
+            共 {filtered.length} · 已选 {selectedUsable.length}
+          </span>
+          <button
+            onClick={selectAllUsable}
+            style={{ padding: '0.35rem 0.7rem', fontSize: '0.8rem', borderRadius: 7, border: '1px solid var(--border, #ddd)', background: 'transparent', cursor: 'pointer', color: 'var(--text-secondary, #555)' }}
+          >
+            全选可用
+          </button>
+          <button
+            onClick={() => setSelected(new Set())}
+            disabled={selected.size === 0}
+            style={{ padding: '0.35rem 0.7rem', fontSize: '0.8rem', borderRadius: 7, border: '1px solid var(--border, #ddd)', background: 'transparent', cursor: selected.size ? 'pointer' : 'not-allowed', color: 'var(--text-secondary, #555)', opacity: selected.size ? 1 : 0.5 }}
+          >
+            清空
+          </button>
+        </div>
+
+        {filtered.length === 0 ? (
+          <div className="coll-empty">
+            {voices.length === 0
+              ? '还没有训练好的音色。去「校对」页用「训练音色」训练一个。'
+              : '没有匹配的音色。'}
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: '0.6rem' }}>
+            {filtered.map((v) => {
+              const sel = selected.has(v.exp)
+              const ok = usable(v)
+              return (
+                <div
+                  key={v.exp}
+                  onClick={() => ok && toggle(v.exp)}
+                  style={{
+                    position: 'relative', borderRadius: 10, padding: '0.65rem 0.75rem',
+                    border: `1.5px solid ${sel ? 'var(--accent, #d97706)' : 'var(--border-default, #e8e0d4)'}`,
+                    background: sel ? 'rgba(217,119,6,0.07)' : 'var(--bg-card, #fff)',
+                    cursor: ok ? 'pointer' : 'default', opacity: ok ? 1 : 0.6,
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6 }}>
+                    <b style={{ fontSize: '0.9rem', wordBreak: 'break-all', lineHeight: 1.3 }}>{v.exp}</b>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setDelTarget(v.exp) }}
+                      title="删除音色"
+                      style={{ flexShrink: 0, border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '0.85rem', opacity: 0.55, padding: 0, lineHeight: 1 }}
+                    >
+                      🗑
+                    </button>
                   </div>
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-        <div className="coll-foot">共 {voices.length} 个音色</div>
+                  <div style={{ fontSize: '0.73rem', color: 'var(--text-tertiary, #999)', marginTop: 5 }}>
+                    e{v.epoch} · SoVITS {v.sovits.length} · GPT {v.gpt.length}
+                  </div>
+                  <div style={{ fontSize: '0.73rem', marginTop: 5 }}>
+                    {ok ? (
+                      <span style={{ color: sel ? 'var(--accent, #d97706)' : '#16a06a', fontWeight: sel ? 600 : 400 }}>
+                        {sel ? '✓ 已选' : '可选'}
+                      </span>
+                    ) : (
+                      <span style={{ color: '#c0392b' }}>缺权重</span>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
       </section>
 
       {/* 试听 / 对比 */}
