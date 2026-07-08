@@ -300,11 +300,13 @@ export function deleteVoiceModel(exp: string): Promise<{ status?: string }> {
 }
 
 // 用训练好的音色合成一段文本(代理 GPU); 免上传参考, 自动取训练样本作参考
+// engine: sovits=GPT-SoVITS 微调; cosyvoice=CosyVoice2 零样本(同源参考)
 export function synthVoice(
   text: string, sovitsWeights: string, gptWeights: string, language: string,
+  engine = 'sovits',
 ): Promise<{ task_id: string }> {
   return api.request(`/export/tts`, {
-    json: { text, sovits_weights: sovitsWeights, gpt_weights: gptWeights, language },
+    json: { text, sovits_weights: sovitsWeights, gpt_weights: gptWeights, language, engine },
   })
 }
 export interface VoiceTTSStatus {

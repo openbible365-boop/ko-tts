@@ -23,6 +23,12 @@ const LANGS: { value: string; label: string }[] = [
   { value: 'en', label: '英语' },
 ]
 
+// 对比的引擎: 微调(GPT-SoVITS 用该音色权重) vs 零样本(CosyVoice2 用同一条训练参考)
+const ENGINE_LABEL: Record<string, string> = {
+  sovits: 'GPT-SoVITS 微调',
+  cosyvoice: 'CosyVoice2 零样本',
+}
+
 // 从权重文件名还原音色名(exp): <exp>_e8_s200.pth 或 <exp>-e15.ckpt
 function expOf(path: string): string {
   const b = path.split('/').pop() || ''
@@ -57,6 +63,8 @@ export function Voices() {
   const [text, setText] = useState('神爱世人，甚至将他的独生子赐给他们。')
   const [language, setLanguage] = useState('zh')
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [compareCosy, setCompareCosy] = useState(true) // 同时用 CosyVoice2 零样本对比
+  // 结果按 `${exp}::${engine}` 存
   const [results, setResults] = useState<Record<string, SynthState>>({})
   const [synthing, setSynthing] = useState(false)
 
@@ -90,33 +98,37 @@ export function Voices() {
       return n
     })
 
+  async function runOne(v: Voice, engine: string) {
+    const key = `${v.exp}::${engine}`
+    try {
+      const { task_id } = await synthVoice(text.trim(), v.bestSovits, v.bestGpt, language, engine)
+      for (let i = 0; i < 90; i++) {
+        await sleep(2000)
+        const st = await getVoiceTTSStatus(task_id)
+        if (st.status === 'success') {
+          setResults((r) => ({ ...r, [key]: { status: 'success', audioUrl: st.audio_url || undefined } }))
+          return
+        }
+        if (st.status === 'error') {
+          setResults((r) => ({ ...r, [key]: { status: 'error', err: st.message || '合成失败' } }))
+          return
+        }
+      }
+      setResults((r) => ({ ...r, [key]: { status: 'error', err: '超时' } }))
+    } catch (e) {
+      setResults((r) => ({ ...r, [key]: { status: 'error', err: (e as Error).message } }))
+    }
+  }
+
   async function runCompare() {
     const picks = voices.filter((v) => selected.has(v.exp) && usable(v))
     if (!text.trim() || picks.length === 0 || synthing) return
+    const engines = compareCosy ? ['sovits', 'cosyvoice'] : ['sovits']
     setSynthing(true)
-    setResults(Object.fromEntries(picks.map((v) => [v.exp, { status: 'running' } as SynthState])))
-    await Promise.all(
-      picks.map(async (v) => {
-        try {
-          const { task_id } = await synthVoice(text.trim(), v.bestSovits, v.bestGpt, language)
-          for (let i = 0; i < 90; i++) {
-            await sleep(2000)
-            const st = await getVoiceTTSStatus(task_id)
-            if (st.status === 'success') {
-              setResults((r) => ({ ...r, [v.exp]: { status: 'success', audioUrl: st.audio_url || undefined } }))
-              return
-            }
-            if (st.status === 'error') {
-              setResults((r) => ({ ...r, [v.exp]: { status: 'error', err: st.message || '合成失败' } }))
-              return
-            }
-          }
-          setResults((r) => ({ ...r, [v.exp]: { status: 'error', err: '超时' } }))
-        } catch (e) {
-          setResults((r) => ({ ...r, [v.exp]: { status: 'error', err: (e as Error).message } }))
-        }
-      }),
-    )
+    const init: Record<string, SynthState> = {}
+    for (const v of picks) for (const e of engines) init[`${v.exp}::${e}`] = { status: 'running' }
+    setResults(init)
+    await Promise.all(picks.flatMap((v) => engines.map((e) => runOne(v, e))))
     setSynthing(false)
   }
 
@@ -226,6 +238,10 @@ export function Voices() {
               ))}
             </select>
           </label>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.85rem', color: 'var(--text-secondary, #555)', cursor: 'pointer' }}>
+            <input type="checkbox" checked={compareCosy} onChange={(e) => setCompareCosy(e.target.checked)} style={{ margin: 0 }} />
+            同时用 CosyVoice2 零样本对比
+          </label>
           <span style={{ fontSize: '0.82rem', color: 'var(--text-tertiary, #888)' }}>
             已选 {selectedUsable.length} 个音色
           </span>
@@ -244,31 +260,40 @@ export function Voices() {
         </div>
 
         {Object.keys(results).length > 0 && (
-          <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+          <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.7rem' }}>
             {voices
-              .filter((v) => results[v.exp])
-              .map((v) => {
-                const r = results[v.exp]
-                return (
-                  <div
-                    key={v.exp}
-                    style={{
-                      border: '1px solid var(--border-default, #e8e0d4)', borderRadius: 10,
-                      padding: '0.7rem 0.9rem', background: 'var(--bg-card, #faf8f4)',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: r.audioUrl ? 6 : 0 }}>
-                      <b style={{ fontSize: '0.92rem' }}>{v.exp}</b>
-                      <span style={{ fontSize: '0.72rem', color: 'var(--text-tertiary, #999)' }}>e{v.epoch}</span>
-                      {r.status === 'running' && <span style={{ fontSize: '0.8rem', color: 'var(--accent, #d97706)' }}>合成中…</span>}
-                      {r.status === 'error' && <span style={{ fontSize: '0.8rem', color: '#c0392b' }}>失败：{r.err}</span>}
-                    </div>
-                    {r.audioUrl && (
-                      <audio controls src={r.audioUrl} style={{ width: '100%', height: 38 }} />
-                    )}
+              .filter((v) => ['sovits', 'cosyvoice'].some((e) => results[`${v.exp}::${e}`]))
+              .map((v) => (
+                <div
+                  key={v.exp}
+                  style={{
+                    border: '1px solid var(--border-default, #e8e0d4)', borderRadius: 10,
+                    padding: '0.7rem 0.9rem', background: 'var(--bg-card, #faf8f4)',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: 8 }}>
+                    <b style={{ fontSize: '0.95rem' }}>{v.exp}</b>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-tertiary, #999)' }}>e{v.epoch}</span>
                   </div>
-                )
-              })}
+                  <div style={{ display: 'flex', gap: '0.7rem', flexWrap: 'wrap' }}>
+                    {['sovits', 'cosyvoice']
+                      .filter((e) => results[`${v.exp}::${e}`])
+                      .map((e) => {
+                        const r = results[`${v.exp}::${e}`]
+                        return (
+                          <div key={e} style={{ flex: '1 1 300px', minWidth: 0 }}>
+                            <div style={{ fontSize: '0.78rem', fontWeight: 600, color: e === 'cosyvoice' ? '#2f9bbf' : 'var(--accent, #d97706)', marginBottom: 4 }}>
+                              {ENGINE_LABEL[e]}
+                              {r.status === 'running' && <span style={{ fontWeight: 400, color: 'var(--text-tertiary,#999)' }}> · 合成中…</span>}
+                              {r.status === 'error' && <span style={{ fontWeight: 400, color: '#c0392b' }}> · 失败：{r.err}</span>}
+                            </div>
+                            {r.audioUrl && <audio controls src={r.audioUrl} style={{ width: '100%', height: 36 }} />}
+                          </div>
+                        )
+                      })}
+                  </div>
+                </div>
+              ))}
           </div>
         )}
       </section>

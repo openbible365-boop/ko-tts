@@ -424,6 +424,8 @@ class VoiceTTSReq(BaseModel):
     sovits_weights: str = Field(min_length=1, max_length=300)
     gpt_weights: str = Field(min_length=1, max_length=300)
     language: str = Field(default="zh", max_length=8)
+    # sovits=GPT-SoVITS 微调; cosyvoice=CosyVoice2 零样本(用该音色训练数据的切片作参考)
+    engine: str = Field(default="sovits", max_length=16)
 
 
 def _gpu_api_base() -> tuple[str, str]:
@@ -442,7 +444,7 @@ async def export_tts(me: StaffOnly, req: VoiceTTSReq) -> dict:
     form = aiohttp.FormData()
     form.add_field("text", req.text)
     form.add_field("language", req.language)
-    form.add_field("engine", "sovits")
+    form.add_field("engine", req.engine or "sovits")
     form.add_field("sovits_weights", req.sovits_weights)
     form.add_field("gpt_weights", req.gpt_weights)
     try:
