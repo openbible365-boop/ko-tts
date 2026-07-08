@@ -291,6 +291,14 @@ export async function getTrainStatus(jobId: string): Promise<TrainStatus> {
   return api.request<TrainStatus>(`/export/train/${jobId}`)
 }
 
+// 训练好的音色: 列出 GPU 上的权重(代理), 删除某个音色
+export function listVoices(): Promise<{ sovits: string[]; gpt: string[] }> {
+  return api.request(`/export/voices`)
+}
+export function deleteVoiceModel(exp: string): Promise<{ status?: string }> {
+  return api.request(`/export/voices/${encodeURIComponent(exp)}`, { method: 'DELETE' })
+}
+
 // 下载 GPT-SoVITS 数据集 zip(wavs/ + train.list)。带鉴权头, 故用 fetch+blob
 // 自己触发下载, 不能用裸 <a href>。返回打包的段数。
 export async function downloadDataset(

@@ -11,6 +11,7 @@ import { ScriptDetail } from './routes/ScriptDetail'
 import { Scripts } from './routes/Scripts'
 import { Upload } from './routes/Upload'
 import { Users } from './routes/Users'
+import { Voices } from './routes/Voices'
 
 // 用户管理仅限 admin; 其它角色撞到这条路由退回首页(后端 /admin/users 也是 admin-only)。
 // 此处 user 必非空(已被 ProtectedRoute 拦过)。
@@ -34,6 +35,7 @@ function App() {
           <Route path="/record" element={<Record />} />
           <Route path="/review" element={<Review />} />
           <Route element={<RequireAdmin />}>
+            <Route path="/voices" element={<Voices />} />
             <Route path="/users" element={<Users />} />
             <Route path="/scripts" element={<Scripts />} />
             <Route path="/scripts/:id" element={<ScriptDetail />} />

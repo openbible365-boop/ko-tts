@@ -375,6 +375,49 @@ async def export_train_status(me: StaffOnly, job_id: str) -> dict:
     return gpu_status
 
 
+@router.get("/voices")
+async def list_voices(me: StaffOnly) -> dict:
+    """列出 GPU 上训练好的音色权重(代理 GPU GET /api/voice-models)。"""
+    if not settings.gpu_train_url or not settings.train_token:
+        raise HTTPException(503, "训练功能未配置 (缺 gpu_train_url / train_token)")
+    base = settings.gpu_train_url.rsplit("/train", 1)[0]  # -> .../api
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as s:
+            async with s.get(
+                f"{base}/voice-models",
+                headers={"X-Train-Token": settings.train_token},
+            ) as r:
+                if r.status != 200:
+                    raise HTTPException(502, f"GPU: {(await r.text())[:200]}")
+                return await r.json()
+    except aiohttp.ClientError as e:
+        raise HTTPException(502, f"连接 GPU 失败: {e}")
+
+
+@router.delete("/voices/{exp}")
+async def delete_voice(me: StaffOnly, exp: str) -> dict:
+    """删除 GPU 上一个训练好的音色(权重+缓存+数据)(代理 GPU DELETE /api/voice/{exp})。"""
+    if not settings.gpu_train_url or not settings.train_token:
+        raise HTTPException(503, "训练功能未配置 (缺 gpu_train_url / train_token)")
+    base = settings.gpu_train_url.rsplit("/train", 1)[0]
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=60)) as s:
+            async with s.delete(
+                f"{base}/voice/{exp}",
+                headers={"X-Train-Token": settings.train_token},
+            ) as r:
+                text = await r.text()
+                if r.status != 200:
+                    # 409(音色正被训练/使用)等原样透传
+                    raise HTTPException(r.status if r.status in (400, 404, 409) else 502, f"GPU: {text[:200]}")
+                try:
+                    return json.loads(text)
+                except Exception:
+                    return {"status": "ok"}
+    except aiohttp.ClientError as e:
+        raise HTTPException(502, f"连接 GPU 失败: {e}")
+
+
 @router.get("/stats", response_model=ExportStats)
 async def export_stats(me: StaffOnly, session: SessionDep) -> ExportStats:
     total_row = (
