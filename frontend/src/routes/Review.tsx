@@ -401,7 +401,8 @@ function SegmentCard({ seg, isStaff }: { seg: Segment; isStaff: boolean }) {
         </span>
       </div>
 
-      <SegmentPlayer seg={seg} />
+      {/* key 带上时长/终点: 裁剪保存后这两个会变 -> 播放器重建、重新拉取新音频 */}
+      <SegmentPlayer key={`player-${seg.duration_ms}-${seg.end_ms}`} seg={seg} />
 
       {seg.audio_key && (
         <div style={{ marginTop: 6, display: 'flex', justifyContent: 'flex-end' }}>
