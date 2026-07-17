@@ -30,6 +30,130 @@ const TABS: { value: SegmentStatus; label: string }[] = [
   { value: 'approved', label: '已通过' },
 ]
 
+const TRAIN_FLOW = [
+  {
+    title: '确认训练配置',
+    detail: '说话人、切片数量、训练轮数与批大小',
+  },
+  {
+    title: '筛选并打包数据',
+    detail: '读取已通过切片，生成 wavs 与 train.list',
+  },
+  {
+    title: '上传临时数据集',
+    detail: 'ZIP 上传 R2，生成限时下载地址',
+  },
+  {
+    title: 'GPU 接收任务',
+    detail: '下载、解压并校验训练数据',
+  },
+  {
+    title: '训练集格式化',
+    detail: '提取文本、语义与音频特征',
+  },
+  {
+    title: '两阶段模型训练',
+    detail: '先训练 SoVITS 音色，再训练 GPT 韵律',
+  },
+  {
+    title: '保存并发布权重',
+    detail: '生成 SoVITS .pth 与 GPT .ckpt',
+  },
+  {
+    title: '声音管理可用',
+    detail: '进入声音管理合成、试听与对比',
+  },
+] as const
+
+type TrainFlowState = 'waiting' | 'active' | 'complete' | 'error'
+
+function inferTrainStep(status?: string, message?: string | null): number {
+  const msg = message || ''
+  if (status === 'submitting') return 0
+  if (status === 'formatting') return 4
+  if (status === 'training') return 5
+  if (status === 'success') return TRAIN_FLOW.length - 1
+
+  if (msg.includes('打包') || msg.includes('受理')) return 1
+  if (msg.includes('上传')) return 2
+  if (msg.includes('提交 GPU') || msg.includes('GPU')) return 3
+  if (msg.includes('格式') || msg.includes('特征')) return 4
+  if (msg.includes('训练')) return 5
+  if (msg.includes('权重') || msg.includes('发布')) return 6
+  return status === 'queued' ? 1 : 0
+}
+
+function TrainingFlow({
+  status,
+  message,
+  exp,
+  segments,
+  configuring = false,
+}: {
+  status?: string
+  message?: string | null
+  exp?: string | null
+  segments?: number | null
+  configuring?: boolean
+}) {
+  const failed = status === 'error'
+  const succeeded = status === 'success'
+  const activeStep = configuring ? 0 : inferTrainStep(status, message)
+
+  const stateOf = (index: number): TrainFlowState => {
+    if (succeeded) return 'complete'
+    if (index < activeStep) return 'complete'
+    if (index === activeStep) return failed ? 'error' : 'active'
+    return 'waiting'
+  }
+
+  return (
+    <section className={`train-flow${configuring ? ' train-flow-config' : ''}`}>
+      <div className="train-flow-head">
+        <div>
+          <b>{configuring ? '训练将按以下流程执行' : '训练流程'}</b>
+          <span>
+            {exp ? `音色「${exp}」` : '提交后自动执行，无需手动切换步骤'}
+            {segments ? ` · ${segments} 段` : ''}
+          </span>
+        </div>
+        {!configuring && status && (
+          <span className={`train-flow-state train-flow-state-${failed ? 'error' : succeeded ? 'complete' : 'active'}`}>
+            {failed ? '失败' : succeeded ? '全部完成' : '执行中'}
+          </span>
+        )}
+      </div>
+
+      <ol className="train-flow-list">
+        {TRAIN_FLOW.map((step, index) => {
+          const state = stateOf(index)
+          return (
+            <li
+              key={step.title}
+              className={`train-flow-step is-${state}`}
+              aria-current={state === 'active' || state === 'error' ? 'step' : undefined}
+            >
+              <span className="train-flow-node" aria-hidden="true">
+                {state === 'complete' ? '✓' : state === 'error' ? '!' : index + 1}
+              </span>
+              <span className="train-flow-copy">
+                <b>{step.title}</b>
+                <small>{step.detail}</small>
+              </span>
+            </li>
+          )
+        })}
+      </ol>
+
+      {failed && (
+        <div className="train-flow-error">
+          当前步骤失败：{message || '训练后端未返回详细错误'}。排除错误后可重新点击“训练音色”从头执行。
+        </div>
+      )}
+    </section>
+  )
+}
+
 // 状态 → 卡片右上角徽章的样式与文案
 const ST: Record<string, { cls: string; label: string }> = {
   pending_correction: { cls: 'wait', label: '待校对' },
@@ -166,8 +290,9 @@ export function Review() {
         .train-hint { margin-top:.25rem; font-size:.8rem; color:var(--text-tertiary,#666); }
         .train-mask { position:fixed; inset:0; background:rgba(15,15,25,.45); backdrop-filter:blur(2px);
           display:flex; align-items:center; justify-content:center; z-index:1000; }
-        .train-card { background:var(--surface,#fff); color:var(--text,#222); width:min(440px,92vw);
-          border-radius:16px; padding:1.4rem 1.5rem; box-shadow:0 20px 60px rgba(0,0,0,.3); }
+        .train-card { background:var(--surface,#fff); color:var(--text,#222); width:min(780px,94vw);
+          max-height:92vh; overflow-y:auto; border-radius:16px; padding:1.4rem 1.5rem;
+          box-shadow:0 20px 60px rgba(0,0,0,.3); }
         .train-card h3 { margin:0 0 .3rem; font-size:1.1rem; display:flex; align-items:center; gap:.5rem; }
         .train-card p { margin:0 0 1rem; font-size:.85rem; color:var(--text-tertiary,#666); line-height:1.6; }
         .train-card input { width:100%; padding:.6rem .7rem; border-radius:9px; font-size:.95rem;
@@ -190,10 +315,11 @@ export function Review() {
             </h3>
             <p>
               把该说话人的<b>「已通过」</b>切片上传到 GPU 微调出专属音色,
-              耗时几分钟到十几分钟。完成后可在合成页的「微调音色」里选用。
+              耗时几分钟到十几分钟。完成后可在「声音管理」里合成、试听和对比。
               <br />
               若同名音色<b>已训练过</b>,会用最新切片<b>重新训练并覆盖</b>。
             </p>
+            <TrainingFlow configuring />
             <label style={{ fontSize: '.8rem', color: 'var(--text-tertiary,#666)' }}>说话人</label>
             <input
               autoFocus
@@ -300,6 +426,9 @@ export function Review() {
           <span>{(trainM.error as Error).message}</span>
         </div>
       )}
+      {isStaff && trainM.isPending && !trainJob && (
+        <TrainingFlow status="submitting" message="正在提交训练请求…" />
+      )}
       {isStaff && trainJob && trainStatusQ.data && (() => {
         const st = trainStatusQ.data.status
         const done = st === 'success'
@@ -317,13 +446,21 @@ export function Review() {
               {trainStatusQ.data.message ? ` — ${trainStatusQ.data.message}` : ''}
               {done && (
                 <div className="train-hint">
-                  已可在合成页面的「微调音色」下拉里选到它。
+                  已可进入「声音管理」页面合成、试听和对比。
                 </div>
               )}
             </span>
           </div>
         )
       })()}
+      {isStaff && trainJob && trainStatusQ.data && (
+        <TrainingFlow
+          status={trainStatusQ.data.status}
+          message={trainStatusQ.data.message}
+          exp={trainStatusQ.data.exp}
+          segments={trainStatusQ.data.segments}
+        />
+      )}
 
       {recordingId && isStaff && (
         <p className="filter-tip">
@@ -459,6 +596,7 @@ function TrimPanel({ seg, onDone }: { seg: Segment; onDone: () => void }) {
 
   useEffect(() => {
     let cancelled = false
+    const audio = audioRef.current
     getSegmentAudioUrl(seg.id).then((r) => { if (!cancelled) setUrl(r.url) }).catch(() => {})
     getSegmentWaveform(seg.id, 260)
       .then((w) => {
@@ -468,8 +606,8 @@ function TrimPanel({ seg, onDone }: { seg: Segment; onDone: () => void }) {
         if (d > 0) { setDur(d); setEnd((p) => (Math.abs(p - seg.duration_ms / 1000) < 0.001 ? d : Math.min(p, d))) }
       })
       .catch(() => { if (!cancelled) setErr('加载波形失败') })
-    return () => { cancelled = true; audioRef.current?.pause() }
-  }, [seg.id])
+    return () => { cancelled = true; audio?.pause() }
+  }, [seg.duration_ms, seg.id])
 
   useEffect(() => {
     const cv = canvasRef.current

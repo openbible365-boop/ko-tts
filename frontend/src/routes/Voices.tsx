@@ -95,7 +95,8 @@ export function Voices() {
   const toggle = (exp: string) =>
     setSelected((s) => {
       const n = new Set(s)
-      n.has(exp) ? n.delete(exp) : n.add(exp)
+      if (n.has(exp)) n.delete(exp)
+      else n.add(exp)
       return n
     })
   const q = query.trim().toLowerCase()
