@@ -299,11 +299,12 @@ export function deleteVoiceModel(exp: string): Promise<{ status?: string }> {
   return api.request(`/export/voices/${encodeURIComponent(exp)}`, { method: 'DELETE' })
 }
 
-// 用训练好的音色合成一段文本(代理 GPU); 免上传参考, 自动取训练样本作参考
-// engine: sovits=GPT-SoVITS 微调; cosyvoice=CosyVoice2 零样本(同源参考)
+export type VoiceEngine = 'sovits' | 'cosyvoice' | 'cosyvoice3'
+
+// 用训练好的音色合成一段文本(代理 GPU); 零样本引擎自动取同一训练样本作参考
 export function synthVoice(
   text: string, sovitsWeights: string, gptWeights: string, language: string,
-  engine = 'sovits',
+  engine: VoiceEngine = 'sovits',
 ): Promise<{ task_id: string }> {
   return api.request(`/export/tts`, {
     json: { text, sovits_weights: sovitsWeights, gpt_weights: gptWeights, language, engine },

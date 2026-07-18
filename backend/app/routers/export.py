@@ -13,7 +13,7 @@ import uuid
 import zipfile
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 import aiohttp
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -424,8 +424,8 @@ class VoiceTTSReq(BaseModel):
     sovits_weights: str = Field(min_length=1, max_length=300)
     gpt_weights: str = Field(min_length=1, max_length=300)
     language: str = Field(default="zh", max_length=8)
-    # sovits=GPT-SoVITS 微调; cosyvoice=CosyVoice2 零样本(用该音色训练数据的切片作参考)
-    engine: str = Field(default="sovits", max_length=16)
+    # 零样本引擎使用同一条训练切片作参考，保证可直接比较 v2/v3。
+    engine: Literal["sovits", "cosyvoice", "cosyvoice3"] = "sovits"
 
 
 def _gpu_api_base() -> tuple[str, str]:
