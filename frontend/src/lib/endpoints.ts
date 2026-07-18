@@ -271,6 +271,7 @@ export async function startTraining(
   speaker: string,
   opts: {
     trainer?: TrainEngine
+    recordingId?: string
     count?: number
     sovits_ep?: number
     gpt_ep?: number
@@ -280,6 +281,7 @@ export async function startTraining(
 ): Promise<TrainStartResp> {
   const q = new URLSearchParams({ speaker })
   if (opts.trainer) q.set('trainer', opts.trainer)
+  if (opts.recordingId) q.set('recording_id', opts.recordingId)
   if (opts.count) q.set('count', String(opts.count))
   if (opts.sovits_ep) q.set('sovits_ep', String(opts.sovits_ep))
   if (opts.gpt_ep) q.set('gpt_ep', String(opts.gpt_ep))

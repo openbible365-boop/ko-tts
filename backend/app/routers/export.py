@@ -124,6 +124,7 @@ async def _build_dataset_zip(
     status=None,
     content_category=None,
     speaker=None,
+    recording_id=None,
     language=None,
     limit=None,
 ) -> tuple[bytes, int]:
@@ -144,7 +145,9 @@ async def _build_dataset_zip(
     if content_category is not None:
         cat = content_category.value if hasattr(content_category, "value") else content_category
         stmt = stmt.where(Recording.content_category == cat)
-    if speaker is not None:
+    if recording_id is not None:
+        stmt = stmt.where(Segment.recording_id == recording_id)
+    elif speaker is not None:
         stmt = stmt.where(Recording.speaker == speaker)
     rows = (await session.execute(stmt)).all()
 
@@ -227,19 +230,26 @@ _TRAIN_TASKS: set = set()  # 持有后台任务引用, 防止被 GC 中途回收
 
 
 async def _run_train_job(
-    local_id: str, speaker: str, exp: str, limit: int | None,
+    local_id: str, speaker: str, recording_id: uuid.UUID | None,
+    exp: str, limit: int | None,
     trainer: str, sovits_ep: int, gpt_ep: int, cosyvoice3_ep: int, batch: int
 ) -> None:
-    """后台: 打包该说话人 approved 切片(limit 时随机抽 N 条)-> 上传 GPU -> 记下 GPU job_id。"""
+    """后台: 打包当前录音或说话人的 approved 切片，再上传 GPU。"""
     job = _TRAIN_JOBS[local_id]
     dataset_key = f"train-datasets/{exp}-{local_id}.zip"
     staged = False
     try:
         job.update(status="queued", message="打包已通过切片中…")
         async with SessionLocal() as session:
-            payload, n = await _build_dataset_zip(session, speaker=speaker, limit=limit)
+            payload, n = await _build_dataset_zip(
+                session,
+                speaker=speaker,
+                recording_id=recording_id,
+                limit=limit,
+            )
         if n == 0:
-            job.update(status="error", message=f"说话人“{speaker}”没有可训练的已通过切片")
+            source = "当前录音" if recording_id else f"说话人“{speaker}”"
+            job.update(status="error", message=f"{source}没有可训练的已通过切片")
             return
         job.update(segments=n, status="queued", message=f"上传 {n} 段到 GPU 中…")
         # 经 R2 中转: GPU 走 cloudflared 隧道, Cloudflare 有 100MB 请求体上限,
@@ -290,7 +300,18 @@ async def _run_train_job(
 async def export_train(
     me: StaffOnly,
     session: SessionDep,
-    speaker: Annotated[str, Query(min_length=1, max_length=128, description="按说话人训练")],
+    speaker: Annotated[
+        str,
+        Query(
+            min_length=1,
+            max_length=128,
+            description="训练音色名；未指定 recording_id 时也作为说话人筛选值",
+        ),
+    ],
+    recording_id: Annotated[
+        uuid.UUID | None,
+        Query(description="仅训练当前录音的已通过切片；指定时优先于 speaker 筛选"),
+    ] = None,
     count: Annotated[
         int | None,
         Query(ge=1, le=100000, description="只用 N 条(随机抽样)训练; 留空=全部。用于不同条数对比"),
@@ -309,17 +330,22 @@ async def export_train(
     if not settings.gpu_train_url or not settings.train_token:
         raise HTTPException(503, "训练功能未配置 (缺 gpu_train_url / train_token)")
     # 先快速 count(不下载音频)校验有无可训练切片, 空则立即报错
-    n_all = await session.scalar(
+    count_stmt = (
         select(func.count())
         .select_from(Segment)
         .join(Recording, Segment.recording_id == Recording.id)
         .where(Segment.status == SegmentStatus.approved.value)
         .where(Segment.text.isnot(None))
         .where(Segment.audio_key.isnot(None))
-        .where(Recording.speaker == speaker)
     )
+    if recording_id is not None:
+        count_stmt = count_stmt.where(Segment.recording_id == recording_id)
+    else:
+        count_stmt = count_stmt.where(Recording.speaker == speaker)
+    n_all = await session.scalar(count_stmt)
     if not n_all:
-        raise HTTPException(400, f"说话人“{speaker}”没有可训练的已通过切片")
+        source = "当前录音" if recording_id else f"说话人“{speaker}”"
+        raise HTTPException(400, f"{source}没有可训练的已通过切片")
     # 按条数训练: 音色名带 _N 后缀独立成音色; 留空/超过总数则用全部
     subset = count is not None and count < n_all
     use_n = count if subset else n_all
@@ -338,7 +364,7 @@ async def export_train(
     }
     task = asyncio.create_task(
         _run_train_job(
-            local_id, speaker, exp, limit, trainer,
+            local_id, speaker, recording_id, exp, limit, trainer,
             sovits_ep, gpt_ep, cosyvoice3_ep, batch,
         )
     )

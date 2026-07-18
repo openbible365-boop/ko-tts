@@ -5,6 +5,7 @@ import uuid
 
 from httpx import AsyncClient
 
+from app.routers import export as export_router
 from app.models import (
     Recording,
     RecordingStatus,
@@ -13,12 +14,22 @@ from app.models import (
 )
 
 
-async def _make_seg(db_session, user, *, text, status, category="sermon", duration_ms=2000):
+async def _make_seg(
+    db_session,
+    user,
+    *,
+    text,
+    status,
+    category="sermon",
+    duration_ms=2000,
+    speaker=None,
+):
     """造一条 (recording, segment) 对供导出消费。"""
     rec = Recording(
         uploaded_by=user.id,
         audio_key=f"recordings/{uuid.uuid4()}/original.wav",
         content_category=category,
+        speaker=speaker,
         status=RecordingStatus.segmented.value,
     )
     db_session.add(rec)
@@ -153,6 +164,45 @@ async def test_contributor_forbidden(client: AsyncClient, contributor, make_toke
     assert r.status_code == 403
     r = await client.get("/export/stats", headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 403
+
+
+async def test_train_recording_id_takes_priority_over_speaker(
+    client: AsyncClient,
+    contributor,
+    reviewer,
+    make_token,
+    db_session,
+    monkeypatch,
+):
+    seg = await _make_seg(
+        db_session,
+        contributor,
+        text="훈련할 문장",
+        status=SegmentStatus.approved,
+        speaker="database-name",
+    )
+
+    async def _noop_train_job(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(export_router.settings, "gpu_train_url", "https://gpu.example/api/train")
+    monkeypatch.setattr(export_router.settings, "train_token", "test-token")
+    monkeypatch.setattr(export_router, "_run_train_job", _noop_train_job)
+    headers = {"Authorization": f"Bearer {make_token(reviewer)}"}
+
+    no_recording = await client.post(
+        "/export/train?speaker=kr-f3",
+        headers=headers,
+    )
+    assert no_recording.status_code == 400
+
+    current_recording = await client.post(
+        f"/export/train?speaker=kr-f3&recording_id={seg.recording_id}",
+        headers=headers,
+    )
+    assert current_recording.status_code == 200, current_recording.text
+    assert current_recording.json()["segments"] == 1
+    assert current_recording.json()["exp"] == "kr-f3"
 
 
 async def test_no_auth_401(client: AsyncClient):

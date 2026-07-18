@@ -242,9 +242,15 @@ export function Review() {
   const [trainSpeaker, setTrainSpeaker] = useState('')
   const [trainCount, setTrainCount] = useState('') // 训练条数; 空=全部
   const trainM = useMutation({
-    mutationFn: (v: { speaker: string; trainer: TrainEngine; count?: number }) =>
+    mutationFn: (v: {
+      speaker: string
+      trainer: TrainEngine
+      recordingId?: string
+      count?: number
+    }) =>
       startTraining(v.speaker, {
         trainer: v.trainer,
+        recordingId: v.recordingId,
         count: v.count,
         cosyvoice3_ep: v.trainer === 'cosyvoice3' ? 10 : undefined,
       }),
@@ -285,6 +291,7 @@ export function Review() {
     trainM.mutate({
       speaker: sp,
       trainer: trainEngine,
+      recordingId,
       count: Number.isFinite(c) && c > 0 ? c : undefined,
     })
   }
@@ -331,7 +338,7 @@ export function Review() {
               {trainEngine === 'cosyvoice3' ? 'CosyVoice3 微调' : 'SoVITS 2 微调'}
             </h3>
             <p>
-              把该说话人的<b>「已通过」</b>切片上传到 GPU，
+              把{recordingId ? '当前录音' : '该说话人'}的<b>「已通过」</b>切片上传到 GPU，
               {trainEngine === 'cosyvoice3'
                 ? '微调 Fun-CosyVoice3 LLM 并发布专属模型。'
                 : '依次训练 SoVITS 音色模型与 GPT 韵律模型。'}
@@ -340,7 +347,9 @@ export function Review() {
               若同名音色<b>已训练过</b>,会用最新切片<b>重新训练并覆盖</b>。
             </p>
             <TrainingFlow engine={trainEngine} configuring />
-            <label style={{ fontSize: '.8rem', color: 'var(--text-tertiary,#666)' }}>说话人</label>
+            <label style={{ fontSize: '.8rem', color: 'var(--text-tertiary,#666)' }}>
+              {recordingId ? '训练音色名' : '说话人'}
+            </label>
             <input
               autoFocus
               value={trainSpeaker}
@@ -348,6 +357,11 @@ export function Review() {
               onKeyDown={(e) => e.key === 'Enter' && submitTrain()}
               placeholder="例如 남성1 / 普通话男声"
             />
+            {recordingId && (
+              <p style={{ margin: '.35rem 0 0', fontSize: '.78rem', color: 'var(--text-tertiary,#888)' }}>
+                当前录音范围已固定；这里填写训练完成后在「声音管理」中显示的音色名。
+              </p>
+            )}
             <label style={{ fontSize: '.8rem', color: 'var(--text-tertiary,#666)', marginTop: '.9rem', display: 'block' }}>
               训练条数
             </label>
