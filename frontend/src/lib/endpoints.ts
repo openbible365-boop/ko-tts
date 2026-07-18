@@ -299,7 +299,7 @@ export function deleteVoiceModel(exp: string): Promise<{ status?: string }> {
   return api.request(`/export/voices/${encodeURIComponent(exp)}`, { method: 'DELETE' })
 }
 
-export type VoiceEngine = 'sovits' | 'cosyvoice' | 'cosyvoice3'
+export type VoiceEngine = 'sovits' | 'cosyvoice' | 'cosyvoice3' | 'cosyvoice3_sft'
 
 // 用训练好的音色合成一段文本(代理 GPU); 零样本引擎自动取同一训练样本作参考
 export function synthVoice(

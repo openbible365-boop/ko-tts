@@ -28,13 +28,21 @@ const ENGINE_LABEL: Record<VoiceEngine, string> = {
   sovits: 'GPT-SoVITS 微调',
   cosyvoice: 'CosyVoice2 零样本',
   cosyvoice3: 'CosyVoice3 零样本',
+  cosyvoice3_sft: 'CosyVoice3 微调',
 }
 const ENGINE_COLOR: Record<VoiceEngine, string> = {
   sovits: 'var(--accent, #d97706)',
   cosyvoice: '#2f9bbf',
   cosyvoice3: '#16805d',
+  cosyvoice3_sft: '#a13d63',
 }
-const ALL_ENGINES: VoiceEngine[] = ['sovits', 'cosyvoice', 'cosyvoice3']
+const ALL_ENGINES: VoiceEngine[] = [
+  'sovits',
+  'cosyvoice',
+  'cosyvoice3',
+  'cosyvoice3_sft',
+]
+const COSYVOICE3_SFT_EXPS = new Set(['kr-f1'])
 
 // 从权重文件名还原音色名(exp): <exp>_e8_s200.pth 或 <exp>-e15.ckpt
 function expOf(path: string): string {
@@ -72,6 +80,7 @@ export function Voices() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [compareCosy2, setCompareCosy2] = useState(true)
   const [compareCosy3, setCompareCosy3] = useState(true)
+  const [compareCosy3Sft, setCompareCosy3Sft] = useState(true)
   const [query, setQuery] = useState('')
   // 结果按 `${exp}::${engine}` 存
   const [results, setResults] = useState<Record<string, SynthState>>({})
@@ -137,14 +146,22 @@ export function Voices() {
   async function runCompare() {
     const picks = voices.filter((v) => selected.has(v.exp) && usable(v))
     if (!text.trim() || picks.length === 0 || synthing) return
-    const engines: VoiceEngine[] = ['sovits']
-    if (compareCosy2) engines.push('cosyvoice')
-    if (compareCosy3) engines.push('cosyvoice3')
+    const enginesFor = (v: Voice) => {
+      const engines: VoiceEngine[] = ['sovits']
+      if (compareCosy2) engines.push('cosyvoice')
+      if (compareCosy3) engines.push('cosyvoice3')
+      if (compareCosy3Sft && COSYVOICE3_SFT_EXPS.has(v.exp)) {
+        engines.push('cosyvoice3_sft')
+      }
+      return engines
+    }
     setSynthing(true)
     const init: Record<string, SynthState> = {}
-    for (const v of picks) for (const e of engines) init[`${v.exp}::${e}`] = { status: 'running' }
+    for (const v of picks) {
+      for (const e of enginesFor(v)) init[`${v.exp}::${e}`] = { status: 'running' }
+    }
     setResults(init)
-    await Promise.all(picks.flatMap((v) => engines.map((e) => runOne(v, e))))
+    await Promise.all(picks.flatMap((v) => enginesFor(v).map((e) => runOne(v, e))))
     setSynthing(false)
   }
 
@@ -285,6 +302,10 @@ export function Voices() {
           <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.85rem', color: 'var(--text-secondary, #555)', cursor: 'pointer' }}>
             <input type="checkbox" checked={compareCosy3} onChange={(e) => setCompareCosy3(e.target.checked)} style={{ margin: 0 }} />
             同时用 CosyVoice3 零样本对比
+          </label>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.85rem', color: 'var(--text-secondary, #555)', cursor: 'pointer' }}>
+            <input type="checkbox" checked={compareCosy3Sft} onChange={(e) => setCompareCosy3Sft(e.target.checked)} style={{ margin: 0 }} />
+            同时用 CosyVoice3 微调对比（kr-f1）
           </label>
           <span style={{ fontSize: '0.82rem', color: 'var(--text-tertiary, #888)' }}>
             已选 {selectedUsable.length} 个音色
