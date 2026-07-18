@@ -14,6 +14,7 @@ import edge_tts
 from fastapi import UploadFile
 
 from schema.tts_schema import TTSRequest, TTSResponse
+from service.text_chunking import split_tts_text
 
 
 # ------------------------- 标准 Edge-TTS（保持原逻辑） -------------------------
@@ -394,14 +395,23 @@ async def _prepare_reference_audio(reference_audio: UploadFile) -> str:
     return os.path.abspath(clean_filepath)
 
 
-def _parse_verses(text: str, verses_json: Optional[str]) -> List[str]:
+def _parse_verses(
+    text: str,
+    verses_json: Optional[str],
+    max_chars: int = 80,
+) -> List[str]:
+    raw_verses = [text]
     if verses_json:
         try:
             verses_data = json.loads(verses_json)
-            return [v.get("text", "") for v in verses_data]
+            raw_verses = [v.get("text", "") for v in verses_data]
         except Exception:
-            return [text]
-    return [text]
+            pass
+    return [
+        chunk
+        for verse in raw_verses
+        for chunk in split_tts_text(verse, max_chars=max_chars)
+    ]
 
 
 async def _run_clone_task(
