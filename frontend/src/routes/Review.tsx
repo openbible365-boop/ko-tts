@@ -295,6 +295,12 @@ export function Review() {
       count: Number.isFinite(c) && c > 0 ? c : undefined,
     })
   }
+  const trainSuffix = trainEngine === 'cosyvoice3' ? '-CV3' : '-SV2'
+  const trainPreviewBase = trainSpeaker.trim().replace(/(?:-SV2|-CV3)(?:_\d+)?$/i, '')
+  const trainPreviewCount = parseInt(trainCount, 10)
+  const trainPreview = `${trainPreviewBase || '声音'}${trainSuffix}${
+    Number.isFinite(trainPreviewCount) && trainPreviewCount > 0 ? `_${trainPreviewCount}` : ''
+  }`
 
   return (
     <div className="review">
@@ -359,7 +365,8 @@ export function Review() {
             />
             {recordingId && (
               <p style={{ margin: '.35rem 0 0', fontSize: '.78rem', color: 'var(--text-tertiary,#888)' }}>
-                当前录音范围已固定；这里填写训练完成后在「声音管理」中显示的音色名。
+                当前录音范围已固定；训练完成后在「声音管理」中显示为
+                <b>「{trainPreview}」</b>。
               </p>
             )}
             <label style={{ fontSize: '.8rem', color: 'var(--text-tertiary,#666)', marginTop: '.9rem', display: 'block' }}>
@@ -392,8 +399,8 @@ export function Review() {
               placeholder="留空 = 全部;或填 N 条(均匀抽样)"
             />
             <p style={{ margin: '.5rem 0 0', fontSize: '.78rem', color: 'var(--text-tertiary,#888)', lineHeight: 1.5 }}>
-              填了条数会从全部素材里<b>随机抽 N 条</b>训练,音色名带 <b>_N</b> 后缀独立成一个音色。
-              想对比效果就分别用 50 / 200 / 500 各训一次(音色如 <code>{(trainSpeaker.trim() || '声音')}_50</code>),
+              填了条数会从全部素材里<b>随机抽 N 条</b>训练，条数附在模型类型后独立成一个音色。
+              想对比效果就分别用 50 / 200 / 500 各训一次（音色如 <code>{trainPreview}</code>），
               在合成页逐个试听比较。GPU 单卡,请一个训完再训下一个。
             </p>
             <div className="row">

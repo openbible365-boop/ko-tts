@@ -242,6 +242,29 @@ def _zero_shot_exp(speaker: str) -> str:
     return f"{base}{suffix}"
 
 
+def _training_exp(speaker: str, trainer: str, subset_count: int | None = None) -> str:
+    """Build a distinct experiment name for each fine-tuning engine."""
+    suffix = "-CV3" if trainer == "cosyvoice3" else "-SV2"
+    base = speaker.strip()
+    base = re.sub(r"(?:-SV2|-CV3)(?:_\d+)?$", "", base, flags=re.IGNORECASE)
+    base = re.sub(r"[/\\]", "", re.sub(r"\s+", "_", base)).strip("_-")
+    base = base[: 64 - len(suffix)].rstrip("_-")
+    if not base:
+        raise HTTPException(400, "当前录音没有可用的说话人名称")
+    exp = f"{base}{suffix}"
+    return f"{exp}_{subset_count}" if subset_count is not None else exp
+
+
+def _voice_kind(exp: str) -> str:
+    if re.search(r"-SV2(?:_\d+)?$", exp, flags=re.IGNORECASE):
+        return "sovits"
+    if re.search(r"-CV3(?:_\d+)?$", exp, flags=re.IGNORECASE):
+        return "cosyvoice3_sft"
+    if exp.endswith("-零样本"):
+        return "zero_shot"
+    return "legacy"
+
+
 async def _register_gpu_zero_shot(
     *,
     exp: str,
@@ -464,10 +487,7 @@ async def export_train(
     limit = use_n if subset else None
     if trainer == "cosyvoice3" and use_n < 3:
         raise HTTPException(400, "CosyVoice3 微调至少需要 3 条已通过切片")
-    # exp 名: 去空白与路径分隔(GPU 端用 exec 跑脚本, 但仍做防御)
-    exp = re.sub(r"[/\\]", "", re.sub(r"\s+", "_", speaker.strip())) or "voice"
-    if subset:
-        exp = f"{exp}_{use_n}"
+    exp = _training_exp(speaker, trainer, use_n if subset else None)
 
     local_id = uuid.uuid4().hex
     _TRAIN_JOBS[local_id] = {
@@ -592,6 +612,14 @@ async def export_tts(me: StaffOnly, req: VoiceTTSReq) -> dict:
     """用训练好的音色合成一段文本(代理 GPU generate_clone, 免建预设直接传权重)。"""
     if not settings.gpu_train_url or not settings.train_token:
         raise HTTPException(503, "训练功能未配置")
+    kind = _voice_kind(req.voice_exp)
+    allowed_engines = {
+        "sovits": {"sovits"},
+        "cosyvoice3_sft": {"cosyvoice3_sft"},
+        "zero_shot": {"cosyvoice", "cosyvoice3"},
+    }.get(kind)
+    if allowed_engines is not None and req.engine not in allowed_engines:
+        raise HTTPException(400, f"音色“{req.voice_exp}”不支持所选合成模型")
     base, _ = _gpu_api_base()
     form = aiohttp.FormData()
     form.add_field("text", req.text)

@@ -202,7 +202,7 @@ async def test_train_recording_id_takes_priority_over_speaker(
     )
     assert current_recording.status_code == 200, current_recording.text
     assert current_recording.json()["segments"] == 1
-    assert current_recording.json()["exp"] == "kr-f3"
+    assert current_recording.json()["exp"] == "kr-f3-SV2"
 
 
 async def test_create_zero_shot_uses_approved_clip_closest_to_six_seconds(

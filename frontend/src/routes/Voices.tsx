@@ -17,6 +17,7 @@ type Voice = {
   bestGpt: string
   cosyvoice3Sft: boolean
   zeroShot: boolean
+  kind: 'zeroShot' | 'sv2' | 'cv3' | 'legacy'
 }
 type SynthState = { status: 'running' | 'success' | 'error'; audioUrl?: string; err?: string }
 
@@ -27,7 +28,7 @@ const LANGS: { value: string; label: string }[] = [
 ]
 
 const ENGINE_LABEL: Record<VoiceEngine, string> = {
-  sovits: 'GPT-SoVITS 微调',
+  sovits: 'GPT 微调',
   cosyvoice: 'CosyVoice2 零样本',
   cosyvoice3: 'CosyVoice3 零样本',
   cosyvoice3_sft: 'CosyVoice3 微调',
@@ -57,6 +58,13 @@ function epochOf(path: string): number {
 }
 const highestEpoch = (arr: string[]) =>
   [...arr].sort((a, b) => epochOf(a) - epochOf(b)).at(-1) || ''
+
+function voiceKind(exp: string, zeroShot: boolean): Voice['kind'] {
+  if (zeroShot) return 'zeroShot'
+  if (/-SV2(?:_\d+)?$/i.test(exp)) return 'sv2'
+  if (/-CV3(?:_\d+)?$/i.test(exp)) return 'cv3'
+  return 'legacy'
+}
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -124,12 +132,18 @@ export function Voices() {
         bestGpt: highestEpoch(v.gpt),
         cosyvoice3Sft: v.cosyvoice3Sft,
         zeroShot: v.zeroShot,
+        kind: voiceKind(exp, v.zeroShot),
       }))
       .sort((a, b) => a.exp.localeCompare(b.exp))
   }, [data])
 
   const hasSovits = (v: Voice) => !!(v.bestSovits && v.bestGpt)
-  const usable = (v: Voice) => v.zeroShot || hasSovits(v) || v.cosyvoice3Sft
+  const usable = (v: Voice) => {
+    if (v.kind === 'zeroShot') return true
+    if (v.kind === 'sv2') return hasSovits(v)
+    if (v.kind === 'cv3') return v.cosyvoice3Sft
+    return hasSovits(v) || v.cosyvoice3Sft
+  }
   const toggle = (exp: string) =>
     setSelected((s) => {
       const n = new Set(s)
@@ -174,13 +188,15 @@ export function Voices() {
   async function runCompare() {
     const picks = voices.filter((v) => selected.has(v.exp) && usable(v))
     if (!text.trim() || picks.length === 0 || synthing) return
-    const enginesFor = (v: Voice) => {
+    const enginesFor = (v: Voice): VoiceEngine[] => {
       const engines: VoiceEngine[] = []
-      if (v.zeroShot) {
+      if (v.kind === 'zeroShot') {
         if (compareCosy2) engines.push('cosyvoice')
         if (compareCosy3) engines.push('cosyvoice3')
         return engines
       }
+      if (v.kind === 'sv2') return hasSovits(v) ? ['sovits'] : []
+      if (v.kind === 'cv3') return v.cosyvoice3Sft ? ['cosyvoice3_sft'] : []
       if (hasSovits(v)) engines.push('sovits')
       if (compareCosy2) engines.push('cosyvoice')
       if (compareCosy3) engines.push('cosyvoice3')
@@ -203,8 +219,13 @@ export function Voices() {
   if (isError) return <div className="coll error">{(error as Error).message}</div>
 
   const selectedUsable = voices.filter((v) => selected.has(v.exp) && usable(v))
-  const onlyZeroShotSelected = selectedUsable.length > 0
-    && selectedUsable.every((v) => v.zeroShot)
+  const selectedKinds = new Set(selectedUsable.map((v) => v.kind))
+  const showZeroShotOptions = selectedKinds.has('zeroShot') || selectedKinds.has('legacy')
+  const showCosy3SftOption = selectedKinds.has('legacy')
+  const fixedEngineLabels = [
+    ...(selectedKinds.has('sv2') ? ['GPT 微调'] : []),
+    ...(selectedKinds.has('cv3') ? ['CosyVoice3 微调'] : []),
+  ]
 
   return (
     <div className="coll">
@@ -284,16 +305,23 @@ export function Voices() {
                     </button>
                   </div>
                   <div style={{ fontSize: '0.73rem', color: 'var(--text-tertiary, #999)', marginTop: 5 }}>
-                    {v.zeroShot
-                      ? 'CosyVoice2 / CosyVoice3 零样本'
-                      : (
-                        <>
-                          {hasSovits(v)
-                            ? `e${v.epoch} · SoVITS ${v.sovits.length} · GPT ${v.gpt.length}`
-                            : 'SoVITS 2 未训练'}
-                          {v.cosyvoice3Sft ? ' · CosyVoice3 微调' : ''}
-                        </>
-                      )}
+                    {v.kind === 'zeroShot' && 'CosyVoice2 / CosyVoice3 零样本'}
+                    {v.kind === 'sv2' && (
+                      hasSovits(v)
+                        ? `GPT 微调 · e${v.epoch} · SoVITS ${v.sovits.length} · GPT ${v.gpt.length}`
+                        : 'GPT 微调 · 权重不完整'
+                    )}
+                    {v.kind === 'cv3' && (
+                      v.cosyvoice3Sft ? 'CosyVoice3 微调' : 'CosyVoice3 微调 · 模型不完整'
+                    )}
+                    {v.kind === 'legacy' && (
+                      <>
+                        {hasSovits(v)
+                          ? `e${v.epoch} · SoVITS ${v.sovits.length} · GPT ${v.gpt.length}`
+                          : 'SoVITS 2 未训练'}
+                        {v.cosyvoice3Sft ? ' · CosyVoice3 微调' : ''}
+                      </>
+                    )}
                   </div>
                   <div style={{ fontSize: '0.73rem', marginTop: 5 }}>
                     {ok ? (
@@ -340,15 +368,32 @@ export function Voices() {
               ))}
             </select>
           </label>
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.85rem', color: 'var(--text-secondary, #555)', cursor: 'pointer' }}>
-            <input type="checkbox" checked={compareCosy2} onChange={(e) => setCompareCosy2(e.target.checked)} style={{ margin: 0 }} />
-            同时用 CosyVoice2 零样本对比
-          </label>
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.85rem', color: 'var(--text-secondary, #555)', cursor: 'pointer' }}>
-            <input type="checkbox" checked={compareCosy3} onChange={(e) => setCompareCosy3(e.target.checked)} style={{ margin: 0 }} />
-            同时用 CosyVoice3 零样本对比
-          </label>
-          {!onlyZeroShotSelected && (
+          {fixedEngineLabels.length > 0 && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', color: 'var(--text-secondary, #555)' }}>
+              合成模型
+              {fixedEngineLabels.map((label) => (
+                <strong
+                  key={label}
+                  style={{ padding: '0.24rem 0.55rem', border: '1px solid var(--border, #ddd)', borderRadius: 6 }}
+                >
+                  {label}
+                </strong>
+              ))}
+            </span>
+          )}
+          {showZeroShotOptions && (
+            <>
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.85rem', color: 'var(--text-secondary, #555)', cursor: 'pointer' }}>
+                <input type="checkbox" checked={compareCosy2} onChange={(e) => setCompareCosy2(e.target.checked)} style={{ margin: 0 }} />
+                同时用 CosyVoice2 零样本对比
+              </label>
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.85rem', color: 'var(--text-secondary, #555)', cursor: 'pointer' }}>
+                <input type="checkbox" checked={compareCosy3} onChange={(e) => setCompareCosy3(e.target.checked)} style={{ margin: 0 }} />
+                同时用 CosyVoice3 零样本对比
+              </label>
+            </>
+          )}
+          {showCosy3SftOption && (
             <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.85rem', color: 'var(--text-secondary, #555)', cursor: 'pointer' }}>
               <input type="checkbox" checked={compareCosy3Sft} onChange={(e) => setCompareCosy3Sft(e.target.checked)} style={{ margin: 0 }} />
               同时用 CosyVoice3 微调对比
@@ -386,7 +431,13 @@ export function Voices() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: 8 }}>
                     <b style={{ fontSize: '0.95rem' }}>{v.exp}</b>
                     <span style={{ fontSize: '0.72rem', color: 'var(--text-tertiary, #999)' }}>
-                      {v.zeroShot ? '零样本参考' : hasSovits(v) ? `e${v.epoch}` : 'CosyVoice3 SFT'}
+                      {v.kind === 'zeroShot'
+                        ? '零样本参考'
+                        : v.kind === 'sv2'
+                          ? 'GPT 微调'
+                          : v.kind === 'cv3'
+                            ? 'CosyVoice3 微调'
+                            : hasSovits(v) ? `e${v.epoch}` : 'CosyVoice3 SFT'}
                     </span>
                   </div>
                   <div style={{ display: 'flex', gap: '0.7rem', flexWrap: 'wrap' }}>
