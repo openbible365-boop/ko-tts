@@ -15,6 +15,7 @@ def main() -> None:
     parser.add_argument("--text", required=True)
     parser.add_argument("--prompt-text", required=True)
     parser.add_argument("--reference", required=True, type=Path)
+    parser.add_argument("--model-exp")
     parser.add_argument("--out", required=True, type=Path)
     args = parser.parse_args()
 
@@ -24,6 +25,7 @@ def main() -> None:
             "prompt_text": args.prompt_text,
             "ref_audio_path": str(args.reference.resolve()),
             "speed_factor": 1.0,
+            "model_exp": args.model_exp,
         },
         ensure_ascii=False,
     ).encode("utf-8")

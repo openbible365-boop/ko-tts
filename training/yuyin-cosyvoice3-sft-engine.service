@@ -1,0 +1,17 @@
+[Unit]
+Description=CosyVoice3 fine-tuned dynamic engine (yuyin)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/tts/CosyVoice
+Environment=PYTHONPATH=/opt/tts/CosyVoice:/opt/tts/CosyVoice/third_party/Matcha-TTS
+Environment=COSYVOICE3_SFT_MODEL_ROOT=/opt/tts/CosyVoice/pretrained_models
+Environment=COSYVOICE3_SFT_DEFAULT_EXP=kr-f1
+ExecStart=/opt/tts/cosyvoice3_venv/bin/python -m uvicorn cosy3_sft_server:app --host 127.0.0.1 --port 9884
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

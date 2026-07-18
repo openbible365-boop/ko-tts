@@ -44,7 +44,7 @@ systemctl start yuyin-cosyvoice3-sft@kr-f1.service
 journalctl -fu yuyin-cosyvoice3-sft@kr-f1.service
 ```
 
-The systemd template stops the four inference engines before training and
+The systemd template stops the inference engines before training and
 starts them again in `ExecStopPost`, including when training fails. The
 business backend remains online.
 
@@ -62,8 +62,15 @@ The `kr-f1` model is packaged at:
 /opt/tts/CosyVoice/pretrained_models/kr-f1-CosyVoice3-SFT
 ```
 
-`yuyin-cosyvoice3-kr-f1.service` serves it on `127.0.0.1:9884`. The original
+`yuyin-cosyvoice3-sft-engine.service` serves fine-tuned models on
+`127.0.0.1:9884` and loads the requested experiment dynamically. The original
 zero-shot model remains on `127.0.0.1:9883`.
+
+In the web application, use **CosyVoice3 微调** on the review page. The
+separate flow diagram reports dataset preparation, feature extraction, LLM
+fine-tuning, checkpoint publication, and model availability. The voices page
+can then synthesize the same text with CosyVoice3 zero-shot and the selected
+fine-tuned model for direct comparison.
 
 ## First baseline
 

@@ -23,6 +23,7 @@ async def run(args) -> None:
         prompt_language=None,
         reference_audio=None,
         engine=args.engine,
+        voice_exp=args.voice_exp,
         sovits_weights=args.sovits_weights,
         gpt_weights=args.gpt_weights,
     )
@@ -44,8 +45,9 @@ def main() -> None:
     parser.add_argument("--engine", required=True)
     parser.add_argument("--text", required=True)
     parser.add_argument("--language", default="ko")
-    parser.add_argument("--sovits-weights", required=True)
-    parser.add_argument("--gpt-weights", required=True)
+    parser.add_argument("--voice-exp")
+    parser.add_argument("--sovits-weights")
+    parser.add_argument("--gpt-weights")
     args = parser.parse_args()
     asyncio.run(run(args))
 

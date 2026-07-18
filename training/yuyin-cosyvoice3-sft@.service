@@ -7,9 +7,9 @@ Type=oneshot
 WorkingDirectory=/opt/tts/CosyVoice
 Environment=COSYVOICE_STAGE=all
 Environment=PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-ExecStartPre=/usr/bin/systemctl stop yuyin-sovits.service yuyin-f5.service yuyin-cosyvoice.service yuyin-cosyvoice3.service
+ExecStartPre=/usr/bin/systemctl stop yuyin-sovits.service yuyin-f5.service yuyin-cosyvoice.service yuyin-cosyvoice3.service yuyin-cosyvoice3-sft-engine.service
 ExecStart=/opt/tts/CosyVoice/training_ko_tts/run_cosyvoice3_sft.sh /opt/tts/cosyvoice3-datasets/%i %i 10
-ExecStopPost=/usr/bin/systemctl --no-block start yuyin-sovits.service yuyin-f5.service yuyin-cosyvoice.service yuyin-cosyvoice3.service
+ExecStopPost=/usr/bin/systemctl --no-block start yuyin-sovits.service yuyin-f5.service yuyin-cosyvoice.service yuyin-cosyvoice3.service yuyin-cosyvoice3-sft-engine.service
 TimeoutStartSec=infinity
 TimeoutStopSec=60
 StandardOutput=journal

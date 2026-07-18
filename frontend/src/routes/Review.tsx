@@ -21,6 +21,7 @@ import {
   startTraining,
   trimSegment,
 } from '../lib/endpoints'
+import type { TrainEngine } from '../lib/endpoints'
 import type { Segment, SegmentStatus } from '../lib/types'
 
 const TABS: { value: SegmentStatus; label: string }[] = [
@@ -30,49 +31,43 @@ const TABS: { value: SegmentStatus; label: string }[] = [
   { value: 'approved', label: '已通过' },
 ]
 
-const TRAIN_FLOW = [
-  {
-    title: '确认训练配置',
-    detail: '说话人、切片数量、训练轮数与批大小',
-  },
-  {
-    title: '筛选并打包数据',
-    detail: '读取已通过切片，生成 wavs 与 train.list',
-  },
-  {
-    title: '上传临时数据集',
-    detail: 'ZIP 上传 R2，生成限时下载地址',
-  },
-  {
-    title: 'GPU 接收任务',
-    detail: '下载、解压并校验训练数据',
-  },
-  {
-    title: '训练集格式化',
-    detail: '提取文本、语义与音频特征',
-  },
-  {
-    title: '两阶段模型训练',
-    detail: '先训练 SoVITS 音色，再训练 GPT 韵律',
-  },
-  {
-    title: '保存并发布权重',
-    detail: '生成 SoVITS .pth 与 GPT .ckpt',
-  },
-  {
-    title: '声音管理可用',
-    detail: '进入声音管理合成、试听与对比',
-  },
-] as const
+const TRAIN_FLOWS = {
+  sovits: [
+    { title: '确认 SoVITS 2 配置', detail: '说话人、切片数量、训练轮数与批大小' },
+    { title: '筛选并打包数据', detail: '读取已通过切片，生成 wavs 与 train.list' },
+    { title: '上传临时数据集', detail: 'ZIP 上传 R2，生成限时下载地址' },
+    { title: 'GPU 接收任务', detail: '下载、解压并校验训练数据' },
+    { title: '训练集格式化', detail: '提取文本、语义与音频特征' },
+    { title: '两阶段模型训练', detail: '先训练 SoVITS 音色，再训练 GPT 韵律' },
+    { title: '保存并发布权重', detail: '生成 SoVITS .pth 与 GPT .ckpt' },
+    { title: '声音管理可用', detail: '进入声音管理合成、试听与对比' },
+  ],
+  cosyvoice3: [
+    { title: '确认 CosyVoice3 配置', detail: '说话人、切片数量与 LLM 微调轮数' },
+    { title: '筛选并打包数据', detail: '读取已通过切片，生成 wavs 与 train.list' },
+    { title: '上传临时数据集', detail: 'ZIP 上传 R2，生成限时下载地址' },
+    { title: '拆分训练与验证集', detail: '生成 train / dev 元数据与系统指令' },
+    { title: '提取语音训练特征', detail: '说话人嵌入、语音 token 与 parquet' },
+    { title: 'CosyVoice3 LLM 微调', detail: '基于 0.5B 底模训练并逐轮验证' },
+    { title: '平均并发布模型', detail: '选取最佳检查点，生成专属 llm.pt' },
+    { title: '声音管理可用', detail: '零样本与微调模型并排合成试听' },
+  ],
+} as const
 
 type TrainFlowState = 'waiting' | 'active' | 'complete' | 'error'
 
-function inferTrainStep(status?: string, message?: string | null): number {
+function inferTrainStep(
+  engine: TrainEngine,
+  status?: string,
+  message?: string | null,
+): number {
   const msg = message || ''
   if (status === 'submitting') return 0
-  if (status === 'formatting') return 4
+  if (status === 'preparing') return 3
+  if (status === 'extracting' || status === 'formatting') return 4
   if (status === 'training') return 5
-  if (status === 'success') return TRAIN_FLOW.length - 1
+  if (status === 'publishing') return 6
+  if (status === 'success') return TRAIN_FLOWS[engine].length - 1
 
   if (msg.includes('打包') || msg.includes('受理')) return 1
   if (msg.includes('上传')) return 2
@@ -84,21 +79,24 @@ function inferTrainStep(status?: string, message?: string | null): number {
 }
 
 function TrainingFlow({
+  engine,
   status,
   message,
   exp,
   segments,
   configuring = false,
 }: {
+  engine: TrainEngine
   status?: string
   message?: string | null
   exp?: string | null
   segments?: number | null
   configuring?: boolean
 }) {
+  const flow = TRAIN_FLOWS[engine]
   const failed = status === 'error'
   const succeeded = status === 'success'
-  const activeStep = configuring ? 0 : inferTrainStep(status, message)
+  const activeStep = configuring ? 0 : inferTrainStep(engine, status, message)
 
   const stateOf = (index: number): TrainFlowState => {
     if (succeeded) return 'complete'
@@ -125,7 +123,7 @@ function TrainingFlow({
       </div>
 
       <ol className="train-flow-list">
-        {TRAIN_FLOW.map((step, index) => {
+        {flow.map((step, index) => {
           const state = stateOf(index)
           return (
             <li
@@ -147,7 +145,7 @@ function TrainingFlow({
 
       {failed && (
         <div className="train-flow-error">
-          当前步骤失败：{message || '训练后端未返回详细错误'}。排除错误后可重新点击“训练音色”从头执行。
+          当前步骤失败：{message || '训练后端未返回详细错误'}。排除错误后可重新提交该微调任务。
         </div>
       )}
     </section>
@@ -240,11 +238,16 @@ export function Review() {
   // 一键微调: 发起训练 + 轮询 GPU 任务进度
   const [trainJob, setTrainJob] = useState<string | null>(null)
   const [trainModal, setTrainModal] = useState(false)
+  const [trainEngine, setTrainEngine] = useState<TrainEngine>('sovits')
   const [trainSpeaker, setTrainSpeaker] = useState('')
   const [trainCount, setTrainCount] = useState('') // 训练条数; 空=全部
   const trainM = useMutation({
-    mutationFn: (v: { speaker: string; count?: number }) =>
-      startTraining(v.speaker, v.count ? { count: v.count } : {}),
+    mutationFn: (v: { speaker: string; trainer: TrainEngine; count?: number }) =>
+      startTraining(v.speaker, {
+        trainer: v.trainer,
+        count: v.count,
+        cosyvoice3_ep: v.trainer === 'cosyvoice3' ? 10 : undefined,
+      }),
     onSuccess: (d) => setTrainJob(d.job_id),
   })
   const trainStatusQ = useQuery({
@@ -256,12 +259,22 @@ export function Review() {
       return s === 'success' || s === 'error' ? false : 5000
     },
   })
+  const currentTrainStatus = trainStatusQ.data?.status
+  const trainBusy = trainM.isPending || (
+    !!trainJob
+    && currentTrainStatus !== 'success'
+    && currentTrainStatus !== 'error'
+  )
   const TRAIN_LABEL: Record<string, string> = {
-    queued: '排队中…', formatting: '格式化中…', training: '训练中…',
+    queued: '排队中…', preparing: '拆分数据中…', extracting: '提取特征中…',
+    formatting: '格式化中…', training: '训练中…', publishing: '发布模型中…',
     success: '训练完成 ✓', error: '训练失败',
   }
-  const onTrain = () => {
+  const onTrain = (engine: TrainEngine) => {
+    if (trainBusy) return
+    setTrainEngine(engine)
     setTrainSpeaker(rec?.speaker || '')
+    setTrainJob(null)
     setTrainModal(true)
   }
   const submitTrain = () => {
@@ -269,7 +282,11 @@ export function Review() {
     if (!sp) return
     const c = parseInt(trainCount, 10)
     setTrainModal(false)
-    trainM.mutate({ speaker: sp, count: Number.isFinite(c) && c > 0 ? c : undefined })
+    trainM.mutate({
+      speaker: sp,
+      trainer: trainEngine,
+      count: Number.isFinite(c) && c > 0 ? c : undefined,
+    })
   }
 
   return (
@@ -311,15 +328,18 @@ export function Review() {
               <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#4f46e5" strokeWidth="1.9">
                 <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
               </svg>
-              训练音色
+              {trainEngine === 'cosyvoice3' ? 'CosyVoice3 微调' : 'SoVITS 2 微调'}
             </h3>
             <p>
-              把该说话人的<b>「已通过」</b>切片上传到 GPU 微调出专属音色,
-              耗时几分钟到十几分钟。完成后可在「声音管理」里合成、试听和对比。
+              把该说话人的<b>「已通过」</b>切片上传到 GPU，
+              {trainEngine === 'cosyvoice3'
+                ? '微调 Fun-CosyVoice3 LLM 并发布专属模型。'
+                : '依次训练 SoVITS 音色模型与 GPT 韵律模型。'}
+              完成后可在「声音管理」里合成、试听和对比。
               <br />
               若同名音色<b>已训练过</b>,会用最新切片<b>重新训练并覆盖</b>。
             </p>
-            <TrainingFlow configuring />
+            <TrainingFlow engine={trainEngine} configuring />
             <label style={{ fontSize: '.8rem', color: 'var(--text-tertiary,#666)' }}>说话人</label>
             <input
               autoFocus
@@ -365,7 +385,7 @@ export function Review() {
             <div className="row">
               <button className="ghost" onClick={() => setTrainModal(false)}>取消</button>
               <button className="primary" disabled={!trainSpeaker.trim()} onClick={submitTrain}>
-                开始训练
+                开始{trainEngine === 'cosyvoice3' ? ' CosyVoice3' : ' SoVITS 2'}微调
               </button>
             </div>
           </div>
@@ -401,14 +421,25 @@ export function Review() {
             </button>
             <button
               className="btn-export"
-              disabled={trainM.isPending}
-              onClick={onTrain}
-              title="把某说话人所有已通过的切片上传到 GPU 并微调出专属音色"
+              disabled={trainBusy}
+              onClick={() => onTrain('sovits')}
+              title="用已通过切片微调 SoVITS 2 和 GPT"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
                 <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
               </svg>
-              {trainM.isPending ? '提交中…' : '训练音色'}
+              {trainM.isPending && trainEngine === 'sovits' ? '提交中…' : 'SoVITS 2 微调'}
+            </button>
+            <button
+              className="btn-export"
+              disabled={trainBusy}
+              onClick={() => onTrain('cosyvoice3')}
+              title="用已通过切片微调 Fun-CosyVoice3 LLM"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
+                <path d="M4 7h16M7 4v6M17 4v6M5 14h4v4H5zM15 14h4v4h-4zM12 11v10" />
+              </svg>
+              {trainM.isPending && trainEngine === 'cosyvoice3' ? '提交中…' : 'CosyVoice3 微调'}
             </button>
           </div>
         )}
@@ -427,7 +458,7 @@ export function Review() {
         </div>
       )}
       {isStaff && trainM.isPending && !trainJob && (
-        <TrainingFlow status="submitting" message="正在提交训练请求…" />
+        <TrainingFlow engine={trainEngine} status="submitting" message="正在提交训练请求…" />
       )}
       {isStaff && trainJob && trainStatusQ.data && (() => {
         const st = trainStatusQ.data.status
@@ -455,6 +486,7 @@ export function Review() {
       })()}
       {isStaff && trainJob && trainStatusQ.data && (
         <TrainingFlow
+          engine={trainStatusQ.data.trainer || trainEngine}
           status={trainStatusQ.data.status}
           message={trainStatusQ.data.message}
           exp={trainStatusQ.data.exp}

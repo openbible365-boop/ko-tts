@@ -11,6 +11,7 @@ COSYVOICE_DIR="${COSYVOICE_DIR:-/opt/tts/CosyVoice}"
 COSYVOICE_PYTHON="${COSYVOICE_PYTHON:-/opt/tts/cosyvoice3_venv/bin/python}"
 PRETRAINED_DIR="${PRETRAINED_DIR:-$COSYVOICE_DIR/pretrained_models/Fun-CosyVoice3-0.5B}"
 WORK_ROOT="${WORK_ROOT:-/opt/tts/cosyvoice3-sft}"
+PUBLISHED_ROOT="${PUBLISHED_ROOT:-$COSYVOICE_DIR/pretrained_models}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORK_DIR="$WORK_ROOT/$EXP"
 MODEL_DIR="$WORK_DIR/exp/llm"
@@ -89,4 +90,15 @@ fi
   --num "$((EPOCHS < 5 ? EPOCHS : 5))" \
   --val_best
 
-echo "CosyVoice3 LLM SFT complete: $MODEL_DIR/llm-sft.pt"
+PUBLISHED_DIR="$PUBLISHED_ROOT/$EXP-CosyVoice3-SFT"
+rm -rf "$PUBLISHED_DIR"
+cp -al "$PRETRAINED_DIR" "$PUBLISHED_DIR"
+rm -f "$PUBLISHED_DIR/llm.pt"
+cp "$MODEL_DIR/llm-sft.pt" "$PUBLISHED_DIR/llm.pt"
+printf '%s\n' \
+  "experiment=$EXP" \
+  "epochs=$EPOCHS" \
+  "checkpoint=$MODEL_DIR/llm-sft.pt" \
+  > "$PUBLISHED_DIR/ko-tts-sft.meta"
+
+echo "CosyVoice3 LLM SFT complete: $PUBLISHED_DIR"

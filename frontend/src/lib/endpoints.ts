@@ -266,14 +266,24 @@ export interface TrainStartResp {
   exp: string
   segments: number
 }
+export type TrainEngine = 'sovits' | 'cosyvoice3'
 export async function startTraining(
   speaker: string,
-  opts: { count?: number; sovits_ep?: number; gpt_ep?: number; batch?: number } = {},
+  opts: {
+    trainer?: TrainEngine
+    count?: number
+    sovits_ep?: number
+    gpt_ep?: number
+    cosyvoice3_ep?: number
+    batch?: number
+  } = {},
 ): Promise<TrainStartResp> {
   const q = new URLSearchParams({ speaker })
+  if (opts.trainer) q.set('trainer', opts.trainer)
   if (opts.count) q.set('count', String(opts.count))
   if (opts.sovits_ep) q.set('sovits_ep', String(opts.sovits_ep))
   if (opts.gpt_ep) q.set('gpt_ep', String(opts.gpt_ep))
+  if (opts.cosyvoice3_ep) q.set('cosyvoice3_ep', String(opts.cosyvoice3_ep))
   if (opts.batch) q.set('batch', String(opts.batch))
   return api.request<TrainStartResp>(`/export/train?${q.toString()}`, { method: 'POST' })
 }
@@ -281,10 +291,11 @@ export async function startTraining(
 export interface TrainStatus {
   job_id: string
   exp: string
+  trainer?: TrainEngine
   status: string
   segments?: number | null
   message?: string | null
-  weights?: { sovits: string[]; gpt: string[] } | null
+  weights?: { sovits?: string[]; gpt?: string[]; cosyvoice3_sft?: string[] } | null
   log_tail?: string
 }
 export async function getTrainStatus(jobId: string): Promise<TrainStatus> {
@@ -292,7 +303,12 @@ export async function getTrainStatus(jobId: string): Promise<TrainStatus> {
 }
 
 // 训练好的音色: 列出 GPU 上的权重(代理), 删除某个音色
-export function listVoices(): Promise<{ sovits: string[]; gpt: string[] }> {
+export interface VoiceModels {
+  sovits: string[]
+  gpt: string[]
+  cosyvoice3_sft: string[]
+}
+export function listVoices(): Promise<VoiceModels> {
   return api.request(`/export/voices`)
 }
 export function deleteVoiceModel(exp: string): Promise<{ status?: string }> {
@@ -303,11 +319,18 @@ export type VoiceEngine = 'sovits' | 'cosyvoice' | 'cosyvoice3' | 'cosyvoice3_sf
 
 // 用训练好的音色合成一段文本(代理 GPU); 零样本引擎自动取同一训练样本作参考
 export function synthVoice(
-  text: string, sovitsWeights: string, gptWeights: string, language: string,
+  text: string, voiceExp: string, sovitsWeights: string, gptWeights: string, language: string,
   engine: VoiceEngine = 'sovits',
 ): Promise<{ task_id: string }> {
   return api.request(`/export/tts`, {
-    json: { text, sovits_weights: sovitsWeights, gpt_weights: gptWeights, language, engine },
+    json: {
+      text,
+      voice_exp: voiceExp,
+      sovits_weights: sovitsWeights || null,
+      gpt_weights: gptWeights || null,
+      language,
+      engine,
+    },
   })
 }
 export interface VoiceTTSStatus {

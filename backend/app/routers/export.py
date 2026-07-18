@@ -228,7 +228,7 @@ _TRAIN_TASKS: set = set()  # 持有后台任务引用, 防止被 GC 中途回收
 
 async def _run_train_job(
     local_id: str, speaker: str, exp: str, limit: int | None,
-    sovits_ep: int, gpt_ep: int, batch: int
+    trainer: str, sovits_ep: int, gpt_ep: int, cosyvoice3_ep: int, batch: int
 ) -> None:
     """后台: 打包该说话人 approved 切片(limit 时随机抽 N 条)-> 上传 GPU -> 记下 GPU job_id。"""
     job = _TRAIN_JOBS[local_id]
@@ -250,8 +250,10 @@ async def _run_train_job(
         dataset_url = await storage.presigned_get_url(dataset_key, expires_in=3600)
         form = aiohttp.FormData()
         form.add_field("exp", exp)
+        form.add_field("trainer", trainer)
         form.add_field("sovits_ep", str(sovits_ep))
         form.add_field("gpt_ep", str(gpt_ep))
+        form.add_field("cosyvoice3_ep", str(cosyvoice3_ep))
         form.add_field("batch", str(batch))
         form.add_field("dataset_url", dataset_url)
         timeout = aiohttp.ClientTimeout(total=600)  # 后台跑, 给足 GPU 下载+受理时间
@@ -296,6 +298,8 @@ async def export_train(
     sovits_ep: Annotated[int, Query(ge=1, le=50)] = 8,
     gpt_ep: Annotated[int, Query(ge=1, le=50)] = 15,
     batch: Annotated[int, Query(ge=1, le=16)] = 4,
+    trainer: Literal["sovits", "cosyvoice3"] = "sovits",
+    cosyvoice3_ep: Annotated[int, Query(ge=1, le=50)] = 10,
 ) -> dict:
     """一键微调: 立即返回本地 job_id; 打包该说话人 approved 切片 + 上传 GPU 在后台进行。
 
@@ -320,6 +324,8 @@ async def export_train(
     subset = count is not None and count < n_all
     use_n = count if subset else n_all
     limit = use_n if subset else None
+    if trainer == "cosyvoice3" and use_n < 3:
+        raise HTTPException(400, "CosyVoice3 微调至少需要 3 条已通过切片")
     # exp 名: 去空白与路径分隔(GPU 端用 exec 跑脚本, 但仍做防御)
     exp = re.sub(r"[/\\]", "", re.sub(r"\s+", "_", speaker.strip())) or "voice"
     if subset:
@@ -327,11 +333,14 @@ async def export_train(
 
     local_id = uuid.uuid4().hex
     _TRAIN_JOBS[local_id] = {
-        "status": "queued", "exp": exp, "segments": use_n,
+        "status": "queued", "exp": exp, "trainer": trainer, "segments": use_n,
         "message": "已受理, 打包中…", "gpu_job_id": None,
     }
     task = asyncio.create_task(
-        _run_train_job(local_id, speaker, exp, limit, sovits_ep, gpt_ep, batch)
+        _run_train_job(
+            local_id, speaker, exp, limit, trainer,
+            sovits_ep, gpt_ep, cosyvoice3_ep, batch,
+        )
     )
     _TRAIN_TASKS.add(task)
     task.add_done_callback(_TRAIN_TASKS.discard)
@@ -351,6 +360,7 @@ async def export_train_status(me: StaffOnly, job_id: str) -> dict:
         if gpu_id is None or local.get("status") == "error":
             return {
                 "job_id": job_id, "exp": local.get("exp"),
+                "trainer": local.get("trainer", "sovits"),
                 "status": local.get("status"), "segments": local.get("segments"),
                 "message": local.get("message"), "weights": None, "log_tail": "",
             }
@@ -371,6 +381,7 @@ async def export_train_status(me: StaffOnly, job_id: str) -> dict:
     # 带上本地记录的 exp/segments(GPU 侧字段齐全时以 GPU 为准)
     if local is not None:
         gpu_status.setdefault("exp", local.get("exp"))
+        gpu_status.setdefault("trainer", local.get("trainer", "sovits"))
         if gpu_status.get("segments") is None:
             gpu_status["segments"] = local.get("segments")
     return gpu_status
@@ -421,8 +432,9 @@ async def delete_voice(me: StaffOnly, exp: str) -> dict:
 
 class VoiceTTSReq(BaseModel):
     text: str = Field(min_length=1, max_length=5000)
-    sovits_weights: str = Field(min_length=1, max_length=300)
-    gpt_weights: str = Field(min_length=1, max_length=300)
+    voice_exp: str = Field(min_length=1, max_length=128)
+    sovits_weights: str | None = Field(default=None, max_length=300)
+    gpt_weights: str | None = Field(default=None, max_length=300)
     language: str = Field(default="zh", max_length=8)
     # 零样本引擎使用同一条训练切片作参考，保证可直接比较 v2/v3。
     engine: Literal[
@@ -447,8 +459,13 @@ async def export_tts(me: StaffOnly, req: VoiceTTSReq) -> dict:
     form.add_field("text", req.text)
     form.add_field("language", req.language)
     form.add_field("engine", req.engine or "sovits")
-    form.add_field("sovits_weights", req.sovits_weights)
-    form.add_field("gpt_weights", req.gpt_weights)
+    form.add_field("voice_exp", req.voice_exp)
+    if req.engine == "sovits" and not (req.sovits_weights and req.gpt_weights):
+        raise HTTPException(400, "GPT-SoVITS 微调音色缺少 SoVITS/GPT 权重")
+    if req.sovits_weights:
+        form.add_field("sovits_weights", req.sovits_weights)
+    if req.gpt_weights:
+        form.add_field("gpt_weights", req.gpt_weights)
     try:
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as s:
             async with s.post(
