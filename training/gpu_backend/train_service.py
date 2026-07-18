@@ -301,13 +301,17 @@ async def _run_sovits(
         try:
             job["status"] = "formatting"
             if not await _sh(job, ["./format.sh", exp, list_path], FORMAT_TIMEOUT):
-                job["status"] = "error"; job.setdefault("message", "格式化失败"); return
+                job["status"] = "error"
+                job.setdefault("message", "格式化失败")
+                return
             job["status"] = "training"
             if not await _sh(
                 job, ["./train.sh", exp, str(batch), str(sovits_ep), str(gpt_ep), str(save_every)],
                 TRAIN_TIMEOUT,
             ):
-                job["status"] = "error"; job.setdefault("message", "训练失败"); return
+                job["status"] = "error"
+                job.setdefault("message", "训练失败")
+                return
             # 收集产出的权重(相对 GPT-SoVITS 目录)
             import glob
             sov = sorted(os.path.basename(p) for p in glob.glob(os.path.join(GPT_SOVITS_DIR, "SoVITS_weights_v2", f"{exp}_e*.pth")))
@@ -341,10 +345,34 @@ async def _run_cosyvoice3(
     prepare_script = os.path.join(
         COSYVOICE_TRAINING_DIR, "prepare_cosyvoice3_dataset.py"
     )
+    normalize_script = os.path.join(
+        COSYVOICE_TRAINING_DIR, "normalize_cosyvoice_audio.py"
+    )
     services_stopped = False
 
     async with _train_lock:
         try:
+            job.update(
+                status="preparing",
+                message="统一音频为 24 kHz 单声道 PCM WAV…",
+            )
+            if not await _sh(
+                job,
+                [
+                    COSYVOICE_PYTHON,
+                    normalize_script,
+                    "--train-list",
+                    list_path,
+                    "--sample-rate",
+                    "24000",
+                ],
+                FORMAT_TIMEOUT,
+                cwd=COSYVOICE_DIR,
+            ):
+                job["status"] = "error"
+                job.setdefault("message", "CosyVoice3 音频标准化失败")
+                return
+
             job.update(
                 status="preparing",
                 message="拆分训练/验证集并生成 CosyVoice3 元数据…",
@@ -372,8 +400,13 @@ async def _run_cosyvoice3(
 
             job.update(
                 status="extracting",
-                message="提取说话人嵌入、语音 token 并生成 parquet…",
+                message="暂停推理服务，提取说话人嵌入、语音 token 与 parquet…",
             )
+            if not await _set_inference_services("stop", job):
+                job["status"] = "error"
+                job.setdefault("message", "暂停 GPU 推理服务失败")
+                return
+            services_stopped = True
             if not await _sh(
                 job,
                 [
@@ -392,11 +425,6 @@ async def _run_cosyvoice3(
                 return
 
             job.update(status="training", message=f"CosyVoice3 LLM 微调 {epochs} 轮…")
-            if not await _set_inference_services("stop", job):
-                job["status"] = "error"
-                job.setdefault("message", "暂停 GPU 推理服务失败")
-                return
-            services_stopped = True
             if not await _sh(
                 job,
                 [run_script, dataset_dir, exp, str(epochs)],
