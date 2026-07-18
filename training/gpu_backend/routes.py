@@ -115,7 +115,7 @@ async def api_train(
     - dataset: 直接 multipart 上传 zip(小数据集)。
     - dataset_url: 预签名下载 URL(ko-tts 走 R2 中转, 绕开 Cloudflare 隧道 100MB 请求体上限)。
     """
-    from service.train_service import TRAIN_TOKEN, start_training
+    from service.train_service import TRAIN_TOKEN, active_job_info, start_training
     if not TRAIN_TOKEN or x_train_token != TRAIN_TOKEN:
         raise HTTPException(status_code=401, detail="invalid train token")
     if dataset_url:
@@ -142,6 +142,13 @@ async def api_train(
             save_every=save_every,
         )
     except RuntimeError as e:  # busy
+        active = active_job_info()
+        if (
+            active
+            and active.get("exp") == exp
+            and active.get("trainer", "sovits") == trainer
+        ):
+            return {"job_id": active["job_id"], "attached": True}
         raise HTTPException(status_code=409, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

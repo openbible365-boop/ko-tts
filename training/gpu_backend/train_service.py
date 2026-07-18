@@ -107,7 +107,12 @@ def is_busy() -> bool:
 
 def active_job_info() -> Optional[Dict[str, Any]]:
     """当前占用训练的任务(供前端显示"谁在训"); 空闲则 None。"""
-    return JOBS.get(_active_job) if _active_job else None
+    if not _active_job:
+        return None
+    job = JOBS.get(_active_job)
+    if job is None:
+        return None
+    return {"job_id": _active_job, **job}
 
 
 def get_job(job_id: str) -> Optional[Dict[str, Any]]:
