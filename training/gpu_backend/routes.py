@@ -92,8 +92,35 @@ async def generate_clone(
 
 @router.get("/voice-models")
 async def api_list_voice_models():
-    """列出 GPU 上已训练的微调权重(供新建微调音色时下拉选择, 免手填路径)。"""
+    """列出 GPU 上的微调权重和独立零样本音色。"""
     return list_voice_models()
+
+
+@router.post("/zero-shot-voices")
+async def api_create_zero_shot_voice(
+    exp: str = Form(...),
+    prompt_text: str = Form(...),
+    prompt_language: str = Form(...),
+    reference_audio: UploadFile = File(...),
+    x_train_token: Optional[str] = Header(None),
+):
+    """保存一个独立零样本音色的参考 WAV 与文本。"""
+    from service.train_service import TRAIN_TOKEN
+    from service.zero_shot_service import save_zero_shot_voice
+
+    if not TRAIN_TOKEN or x_train_token != TRAIN_TOKEN:
+        raise HTTPException(status_code=401, detail="invalid train token")
+    audio = await reference_audio.read()
+    try:
+        metadata = save_zero_shot_voice(
+            exp,
+            audio,
+            prompt_text,
+            prompt_language,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"status": "success", **metadata}
 
 
 @router.post("/train")
@@ -157,7 +184,7 @@ async def api_train(
 
 @router.delete("/voice/{exp}")
 async def api_delete_voice(exp: str):
-    """删除一个训练好的音色(权重+缓存+数据)。鉴权走路由级依赖。"""
+    """删除一个音色的零样本参考、权重、缓存与数据。"""
     from service.train_service import delete_voice
     try:
         return delete_voice(exp)

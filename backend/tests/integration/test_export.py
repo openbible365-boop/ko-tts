@@ -205,6 +205,95 @@ async def test_train_recording_id_takes_priority_over_speaker(
     assert current_recording.json()["exp"] == "kr-f3"
 
 
+async def test_create_zero_shot_uses_approved_clip_closest_to_six_seconds(
+    client: AsyncClient,
+    contributor,
+    reviewer,
+    make_token,
+    db_session,
+    monkeypatch,
+):
+    first = await _make_seg(
+        db_session,
+        contributor,
+        text="四秒参考",
+        status=SegmentStatus.approved,
+        duration_ms=4000,
+        speaker="kr f4",
+    )
+    recording = await db_session.get(Recording, first.recording_id)
+    recording.language = "ko"
+    closest = Segment(
+        recording_id=recording.id,
+        segment_index=1,
+        start_ms=4000,
+        end_ms=10100,
+        duration_ms=6100,
+        audio_key=f"segments/{uuid.uuid4()}.wav",
+        text="最接近六秒的参考",
+        status=SegmentStatus.approved.value,
+    )
+    db_session.add(closest)
+    await db_session.commit()
+
+    captured = {}
+
+    async def _get_bytes(key: str) -> bytes:
+        captured["audio_key"] = key
+        return b"reference-audio"
+
+    async def _register(**kwargs):
+        captured.update(kwargs)
+        return {"status": "success", "duration_sec": 6.1}
+
+    monkeypatch.setattr(export_router.settings, "gpu_train_url", "https://gpu.example/api/train")
+    monkeypatch.setattr(export_router.settings, "train_token", "test-token")
+    monkeypatch.setattr(export_router.storage, "get_bytes", _get_bytes)
+    monkeypatch.setattr(export_router, "_register_gpu_zero_shot", _register)
+
+    response = await client.post(
+        f"/export/zero-shot?recording_id={recording.id}",
+        headers={"Authorization": f"Bearer {make_token(reviewer)}"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["exp"] == "kr_f4-零样本"
+    assert response.json()["source_segment_id"] == str(closest.id)
+    assert response.json()["source_duration_ms"] == 6100
+    assert captured["audio_key"] == closest.audio_key
+    assert captured["audio"] == b"reference-audio"
+    assert captured["prompt_text"] == "最接近六秒的参考"
+    assert captured["prompt_language"] == "ko"
+
+
+async def test_create_zero_shot_requires_approved_three_to_ten_second_clip(
+    client: AsyncClient,
+    contributor,
+    reviewer,
+    make_token,
+    db_session,
+    monkeypatch,
+):
+    segment = await _make_seg(
+        db_session,
+        contributor,
+        text="太短",
+        status=SegmentStatus.approved,
+        duration_ms=2000,
+        speaker="kr-f5",
+    )
+    monkeypatch.setattr(export_router.settings, "gpu_train_url", "https://gpu.example/api/train")
+    monkeypatch.setattr(export_router.settings, "train_token", "test-token")
+
+    response = await client.post(
+        f"/export/zero-shot?recording_id={segment.recording_id}",
+        headers={"Authorization": f"Bearer {make_token(reviewer)}"},
+    )
+
+    assert response.status_code == 400
+    assert "3–9 秒" in response.json()["detail"]
+
+
 async def test_no_auth_401(client: AsyncClient):
     r = await client.get("/export/manifest.jsonl")
     assert r.status_code == 401

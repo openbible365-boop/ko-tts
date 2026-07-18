@@ -233,6 +233,8 @@ async def start_training(
 def delete_voice(exp: str) -> Dict[str, Any]:
     """删除一个训练好的音色(权重 + 格式化缓存 + 数据)。不能删正在训练的。"""
     import glob
+    from .zero_shot_service import delete_zero_shot_voice
+
     if not valid_exp(exp):
         raise ValueError("非法 exp 名")
     if _active_job and (JOBS.get(_active_job) or {}).get("exp") == exp:
@@ -254,6 +256,8 @@ def delete_voice(exp: str) -> Dict[str, Any]:
     if os.path.isdir(cosyvoice_model):
         shutil.rmtree(cosyvoice_model, ignore_errors=True)
         removed.append(f"{exp}-CosyVoice3-SFT")
+    if delete_zero_shot_voice(exp):
+        removed.append(f"{exp}-零样本参考")
     shutil.rmtree(os.path.join(COSYVOICE_DATASET_DIR, exp), ignore_errors=True)
     shutil.rmtree(os.path.join(COSYVOICE_WORK_DIR, exp), ignore_errors=True)
     shutil.rmtree(os.path.join(GPT_SOVITS_DIR, "logs", exp), ignore_errors=True)

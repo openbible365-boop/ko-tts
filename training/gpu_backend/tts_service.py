@@ -15,6 +15,10 @@ from fastapi import UploadFile
 
 from schema.tts_schema import TTSRequest, TTSResponse
 from service.text_chunking import split_tts_text
+from service.zero_shot_service import (
+    get_zero_shot_reference,
+    list_zero_shot_voices,
+)
 
 
 # ------------------------- 标准 Edge-TTS（保持原逻辑） -------------------------
@@ -157,6 +161,7 @@ def list_voice_models() -> Dict[str, List[str]]:
         "sovits": _scan("SoVITS_weights*", ".pth"),
         "gpt": _scan("GPT_weights*", ".ckpt"),
         "cosyvoice3_sft": sorted(cosyvoice3_sft),
+        "zero_shot": list_zero_shot_voices(),
     }
 
 
@@ -210,6 +215,9 @@ def auto_reference_for_weights(sovits_weights: str) -> Optional[Tuple[str, str, 
 
 def auto_reference_for_exp(exp: str) -> Optional[Tuple[str, str, str]]:
     """Pick a representative training reference by experiment name."""
+    zero_shot_reference = get_zero_shot_reference(exp)
+    if zero_shot_reference is not None:
+        return zero_shot_reference
     list_path = os.path.join(YUYIN_DATA_DIR, exp, "train_ready.list")
     if not os.path.exists(list_path):
         return None

@@ -16,6 +16,7 @@ type Voice = {
   bestSovits: string
   bestGpt: string
   cosyvoice3Sft: boolean
+  zeroShot: boolean
 }
 type SynthState = { status: 'running' | 'success' | 'error'; audioUrl?: string; err?: string }
 
@@ -87,17 +88,31 @@ export function Voices() {
   const [synthing, setSynthing] = useState(false)
 
   const voices = useMemo<Voice[]>(() => {
-    const map: Record<string, { sovits: string[]; gpt: string[]; cosyvoice3Sft: boolean }> = {}
+    const map: Record<string, {
+      sovits: string[]
+      gpt: string[]
+      cosyvoice3Sft: boolean
+      zeroShot: boolean
+    }> = {}
+    const emptyVoice = () => ({
+      sovits: [],
+      gpt: [],
+      cosyvoice3Sft: false,
+      zeroShot: false,
+    })
     for (const w of data?.sovits ?? []) {
       const e = expOf(w)
-      ;(map[e] ??= { sovits: [], gpt: [], cosyvoice3Sft: false }).sovits.push(w)
+      ;(map[e] ??= emptyVoice()).sovits.push(w)
     }
     for (const w of data?.gpt ?? []) {
       const e = expOf(w)
-      ;(map[e] ??= { sovits: [], gpt: [], cosyvoice3Sft: false }).gpt.push(w)
+      ;(map[e] ??= emptyVoice()).gpt.push(w)
     }
     for (const exp of data?.cosyvoice3_sft ?? []) {
-      ;(map[exp] ??= { sovits: [], gpt: [], cosyvoice3Sft: false }).cosyvoice3Sft = true
+      ;(map[exp] ??= emptyVoice()).cosyvoice3Sft = true
+    }
+    for (const exp of data?.zero_shot ?? []) {
+      ;(map[exp] ??= emptyVoice()).zeroShot = true
     }
     return Object.entries(map)
       .map(([exp, v]) => ({
@@ -108,12 +123,13 @@ export function Voices() {
         bestSovits: highestEpoch(v.sovits),
         bestGpt: highestEpoch(v.gpt),
         cosyvoice3Sft: v.cosyvoice3Sft,
+        zeroShot: v.zeroShot,
       }))
       .sort((a, b) => a.exp.localeCompare(b.exp))
   }, [data])
 
   const hasSovits = (v: Voice) => !!(v.bestSovits && v.bestGpt)
-  const usable = (v: Voice) => hasSovits(v) || v.cosyvoice3Sft
+  const usable = (v: Voice) => v.zeroShot || hasSovits(v) || v.cosyvoice3Sft
   const toggle = (exp: string) =>
     setSelected((s) => {
       const n = new Set(s)
@@ -160,6 +176,11 @@ export function Voices() {
     if (!text.trim() || picks.length === 0 || synthing) return
     const enginesFor = (v: Voice) => {
       const engines: VoiceEngine[] = []
+      if (v.zeroShot) {
+        if (compareCosy2) engines.push('cosyvoice')
+        if (compareCosy3) engines.push('cosyvoice3')
+        return engines
+      }
       if (hasSovits(v)) engines.push('sovits')
       if (compareCosy2) engines.push('cosyvoice')
       if (compareCosy3) engines.push('cosyvoice3')
@@ -182,6 +203,8 @@ export function Voices() {
   if (isError) return <div className="coll error">{(error as Error).message}</div>
 
   const selectedUsable = voices.filter((v) => selected.has(v.exp) && usable(v))
+  const onlyZeroShotSelected = selectedUsable.length > 0
+    && selectedUsable.every((v) => v.zeroShot)
 
   return (
     <div className="coll">
@@ -192,7 +215,7 @@ export function Voices() {
             声音管理
           </h1>
           <div className="sub">
-            管理训练好的音色；勾选一个或多个，在下方输入文本，用它们朗读并对比效果。
+            管理零样本和微调音色；勾选一个或多个，在下方输入文本并合成对比。
           </div>
         </div>
       </div>
@@ -231,7 +254,7 @@ export function Voices() {
         {filtered.length === 0 ? (
           <div className="coll-empty">
             {voices.length === 0
-              ? '还没有训练好的音色。去「校对」页使用 SoVITS 2 或 CosyVoice3 微调。'
+              ? '还没有可用音色。去「校对」页创建零样本音色或进行微调。'
               : '没有匹配的音色。'}
           </div>
         ) : (
@@ -261,8 +284,16 @@ export function Voices() {
                     </button>
                   </div>
                   <div style={{ fontSize: '0.73rem', color: 'var(--text-tertiary, #999)', marginTop: 5 }}>
-                    {hasSovits(v) ? `e${v.epoch} · SoVITS ${v.sovits.length} · GPT ${v.gpt.length}` : 'SoVITS 2 未训练'}
-                    {v.cosyvoice3Sft ? ' · CosyVoice3 微调' : ''}
+                    {v.zeroShot
+                      ? 'CosyVoice2 / CosyVoice3 零样本'
+                      : (
+                        <>
+                          {hasSovits(v)
+                            ? `e${v.epoch} · SoVITS ${v.sovits.length} · GPT ${v.gpt.length}`
+                            : 'SoVITS 2 未训练'}
+                          {v.cosyvoice3Sft ? ' · CosyVoice3 微调' : ''}
+                        </>
+                      )}
                   </div>
                   <div style={{ fontSize: '0.73rem', marginTop: 5 }}>
                     {ok ? (
@@ -317,10 +348,12 @@ export function Voices() {
             <input type="checkbox" checked={compareCosy3} onChange={(e) => setCompareCosy3(e.target.checked)} style={{ margin: 0 }} />
             同时用 CosyVoice3 零样本对比
           </label>
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.85rem', color: 'var(--text-secondary, #555)', cursor: 'pointer' }}>
-            <input type="checkbox" checked={compareCosy3Sft} onChange={(e) => setCompareCosy3Sft(e.target.checked)} style={{ margin: 0 }} />
-            同时用 CosyVoice3 微调对比
-          </label>
+          {!onlyZeroShotSelected && (
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.85rem', color: 'var(--text-secondary, #555)', cursor: 'pointer' }}>
+              <input type="checkbox" checked={compareCosy3Sft} onChange={(e) => setCompareCosy3Sft(e.target.checked)} style={{ margin: 0 }} />
+              同时用 CosyVoice3 微调对比
+            </label>
+          )}
           <span style={{ fontSize: '0.82rem', color: 'var(--text-tertiary, #888)' }}>
             已选 {selectedUsable.length} 个音色
           </span>
@@ -353,7 +386,7 @@ export function Voices() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: 8 }}>
                     <b style={{ fontSize: '0.95rem' }}>{v.exp}</b>
                     <span style={{ fontSize: '0.72rem', color: 'var(--text-tertiary, #999)' }}>
-                      {hasSovits(v) ? `e${v.epoch}` : 'CosyVoice3 SFT'}
+                      {v.zeroShot ? '零样本参考' : hasSovits(v) ? `e${v.epoch}` : 'CosyVoice3 SFT'}
                     </span>
                   </div>
                   <div style={{ display: 'flex', gap: '0.7rem', flexWrap: 'wrap' }}>
@@ -387,7 +420,13 @@ export function Voices() {
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <h2>删除音色「{delTarget}」？</h2>
             <p>
-              将永久删除该音色在 GPU 上的<strong>权重、训练缓存与数据</strong>，
+              将永久删除该音色在 GPU 上的
+              <strong>
+                {voices.find((voice) => voice.exp === delTarget)?.zeroShot
+                  ? '参考音频与文本'
+                  : '权重、训练缓存与数据'}
+              </strong>
+              ，
               合成页将不再能选用它。
               <br />
               此操作<strong>不可撤销</strong>（日后可重新训练）。

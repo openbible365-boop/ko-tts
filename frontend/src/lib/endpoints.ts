@@ -304,11 +304,24 @@ export async function getTrainStatus(jobId: string): Promise<TrainStatus> {
   return api.request<TrainStatus>(`/export/train/${jobId}`)
 }
 
-// 训练好的音色: 列出 GPU 上的权重(代理), 删除某个音色
+export interface ZeroShotVoiceResult {
+  status: string
+  exp: string
+  source_segment_id: string
+  source_duration_ms: number
+  duration_sec: number
+}
+export function createZeroShotVoice(recordingId: string): Promise<ZeroShotVoiceResult> {
+  const q = new URLSearchParams({ recording_id: recordingId })
+  return api.request(`/export/zero-shot?${q.toString()}`, { method: 'POST' })
+}
+
+// GPU 音色: 微调权重和独立零样本参考
 export interface VoiceModels {
   sovits: string[]
   gpt: string[]
   cosyvoice3_sft: string[]
+  zero_shot: string[]
 }
 export function listVoices(): Promise<VoiceModels> {
   return api.request(`/export/voices`)

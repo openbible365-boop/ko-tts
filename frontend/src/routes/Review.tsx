@@ -10,8 +10,8 @@ import { useAuth } from '../auth/AuthContext'
 import {
   approveSegment,
   correctSegment,
+  createZeroShotVoice,
   deleteSegment,
-  downloadDataset,
   getRecording,
   getSegmentAudioUrl,
   getSegmentWaveform,
@@ -231,8 +231,8 @@ export function Review() {
     queryFn: () => listSegments({ status: tab, recordingId }),
   })
 
-  const exportM = useMutation({
-    mutationFn: () => downloadDataset({ status: 'approved' }),
+  const zeroShotM = useMutation({
+    mutationFn: () => createZeroShotVoice(recordingId as string),
   })
 
   // 一键微调: 发起训练 + 轮询 GPU 任务进度
@@ -414,7 +414,7 @@ export function Review() {
           </h1>
           <div className="sub">
             {isStaff
-              ? '逐条校对 ASR 文本并提交审核，通过后导出数据集'
+              ? '逐条校对 ASR 文本并提交审核，通过后创建音色或进行微调'
               : '逐条校对 ASR 文本并提交审核'}
           </div>
         </div>
@@ -422,16 +422,18 @@ export function Review() {
           <div style={{ display: 'flex', gap: '0.6rem', flexShrink: 0, alignItems: 'center' }}>
             <button
               className="btn-export"
-              disabled={exportM.isPending}
-              onClick={() => exportM.mutate()}
-              title="把所有已通过的切片打包成 GPT-SoVITS 数据集(wavs + train.list)"
+              disabled={zeroShotM.isPending || !recordingId}
+              onClick={() => zeroShotM.mutate()}
+              title={recordingId
+                ? '从当前录音选择最接近 6 秒的已通过切片，创建独立零样本音色'
+                : '请先进入某一条录音的校对页面'}
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
-                <path d="M12 3v12" />
-                <path d="m7 10 5 5 5-5" />
-                <path d="M5 21h14" />
+                <path d="M12 3v10" />
+                <rect x="8" y="3" width="8" height="13" rx="4" />
+                <path d="M5 11a7 7 0 0 0 14 0M12 18v3M8 21h8" />
               </svg>
-              {exportM.isPending ? '导出中…' : '导出数据集 (已通过)'}
+              {zeroShotM.isPending ? '创建中…' : '创建零样本音色'}
             </button>
             <button
               className="btn-export"
@@ -459,11 +461,15 @@ export function Review() {
         )}
       </div>
 
-      {isStaff && exportM.isError && (
-        <p className="rev-msg err">{(exportM.error as Error).message}</p>
+      {isStaff && zeroShotM.isError && (
+        <p className="rev-msg err">{(zeroShotM.error as Error).message}</p>
       )}
-      {isStaff && exportM.isSuccess && (
-        <p className="rev-msg">已导出 {exportM.data} 段为数据集 zip。</p>
+      {isStaff && zeroShotM.isSuccess && (
+        <p className="rev-msg">
+          已创建零样本音色「{zeroShotM.data.exp}」，参考切片
+          {(zeroShotM.data.source_duration_ms / 1000).toFixed(1)} 秒。
+          {' '}<Link to="/voices">前往声音管理</Link>
+        </p>
       )}
       {isStaff && trainM.isError && (
         <div className="train-banner err">

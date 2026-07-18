@@ -229,6 +229,118 @@ _TRAIN_JOBS: dict[str, dict] = {}
 _TRAIN_TASKS: set = set()  # 持有后台任务引用, 防止被 GC 中途回收
 
 
+def _zero_shot_exp(speaker: str) -> str:
+    """Build a GPU-safe display name ending in -零样本."""
+    suffix = "-零样本"
+    base = speaker.strip()
+    if base.endswith(suffix):
+        base = base[: -len(suffix)]
+    base = re.sub(r"[/\\]", "", re.sub(r"\s+", "_", base)).strip("_-")
+    base = base[: 64 - len(suffix)].rstrip("_-")
+    if not base:
+        raise HTTPException(400, "当前录音没有可用的说话人名称")
+    return f"{base}{suffix}"
+
+
+async def _register_gpu_zero_shot(
+    *,
+    exp: str,
+    audio: bytes,
+    prompt_text: str,
+    prompt_language: str,
+) -> dict:
+    base = settings.gpu_train_url.rsplit("/train", 1)[0]
+    form = aiohttp.FormData()
+    form.add_field("exp", exp)
+    form.add_field("prompt_text", prompt_text)
+    form.add_field("prompt_language", prompt_language)
+    form.add_field(
+        "reference_audio",
+        audio,
+        filename="reference-audio",
+        content_type="application/octet-stream",
+    )
+    try:
+        async with aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=180)
+        ) as client:
+            async with client.post(
+                f"{base}/zero-shot-voices",
+                data=form,
+                headers={"X-Train-Token": settings.train_token},
+            ) as response:
+                text = await response.text()
+                if response.status != 200:
+                    detail = text[:300]
+                    try:
+                        detail = json.loads(text).get("detail", detail)
+                    except Exception:
+                        pass
+                    raise HTTPException(
+                        response.status
+                        if response.status in (400, 409)
+                        else 502,
+                        f"GPU: {detail}",
+                    )
+                return json.loads(text)
+    except aiohttp.ClientError as e:
+        raise HTTPException(502, f"连接 GPU 失败: {e}")
+
+
+@router.post("/zero-shot")
+async def create_zero_shot_voice(
+    me: StaffOnly,
+    session: SessionDep,
+    recording_id: Annotated[uuid.UUID, Query()],
+) -> dict:
+    """Create a standalone zero-shot voice from the best approved 3-10s clip."""
+    if not settings.gpu_train_url or not settings.train_token:
+        raise HTTPException(503, "零样本音色功能未配置")
+    recording = await session.get(Recording, recording_id)
+    if recording is None:
+        raise HTTPException(404, "录音不存在")
+    if not recording.speaker or not recording.speaker.strip():
+        raise HTTPException(400, "当前录音未设置说话人名称")
+
+    stmt = (
+        select(Segment)
+        .where(Segment.recording_id == recording_id)
+        .where(Segment.status == SegmentStatus.approved.value)
+        .where(Segment.text.isnot(None))
+        .where(Segment.audio_key.isnot(None))
+        .where(Segment.duration_ms.between(3000, 9000))
+        .order_by(Segment.segment_index)
+    )
+    candidates = [
+        segment
+        for segment in (await session.scalars(stmt)).all()
+        if segment.text and segment.text.strip()
+    ]
+    if not candidates:
+        raise HTTPException(
+            400,
+            "当前录音没有 3–9 秒且已通过的切片，无法创建零样本音色",
+        )
+    segment = min(
+        candidates,
+        key=lambda item: (abs(item.duration_ms - 6000), item.segment_index),
+    )
+    audio = await storage.get_bytes(segment.audio_key)
+    exp = _zero_shot_exp(recording.speaker)
+    result = await _register_gpu_zero_shot(
+        exp=exp,
+        audio=audio,
+        prompt_text=segment.text.strip(),
+        prompt_language=recording.language or "ko",
+    )
+    return {
+        **result,
+        "exp": exp,
+        "source_segment_id": str(segment.id),
+        "source_duration_ms": segment.duration_ms,
+    }
+
+
 async def _run_train_job(
     local_id: str, speaker: str, recording_id: uuid.UUID | None,
     exp: str, limit: int | None,
